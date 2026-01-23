@@ -57,3 +57,10 @@ nul
 # Environment variables
 .env
 .env.*
+接口.md
+任务.md
+需求.md
+.gitignore
+CLAUDE.md
+openai-api.md
+.gitignore

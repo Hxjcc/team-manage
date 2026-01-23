@@ -25,11 +25,12 @@ bcrypt>=4.1.2
 cryptography>=41.0.0
 
 # Data Validation
-pydantic>=2.5.0
+pydantic[email]>=2.5.0
 pydantic-settings>=2.1.0
 
 # Utilities
 python-multipart>=0.0.6
+itsdangerous>=2.1.2
 
 # Excel Export
 xlsxwriter>=3.1.9
