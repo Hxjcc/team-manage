@@ -381,7 +381,8 @@ class RedemptionService:
         self,
         db_session: AsyncSession,
         page: int = 1,
-        per_page: int = 50
+        per_page: int = 50,
+        search: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         获取所有兑换码
@@ -390,28 +391,41 @@ class RedemptionService:
             db_session: 数据库会话
             page: 页码
             per_page: 每页数量
+            search: 搜索关键词 (兑换码或邮箱)
 
         Returns:
             结果字典,包含 success, codes, total, total_pages, current_page, error
         """
         try:
-            # 1. 获取总数
+            # 1. 构建基础查询
             count_stmt = select(func.count(RedemptionCode.id))
+            stmt = select(RedemptionCode).order_by(RedemptionCode.created_at.desc())
+
+            # 2. 如果提供了搜索关键词,添加过滤条件
+            if search:
+                search_filter = or_(
+                    RedemptionCode.code.ilike(f"%{search}%"),
+                    RedemptionCode.used_by_email.ilike(f"%{search}%")
+                )
+                count_stmt = count_stmt.where(search_filter)
+                stmt = stmt.where(search_filter)
+
+            # 3. 获取总数
             count_result = await db_session.execute(count_stmt)
             total = count_result.scalar() or 0
 
-            # 2. 计算分页
+            # 4. 计算分页
             import math
             total_pages = math.ceil(total / per_page) if total > 0 else 1
             if page < 1:
                 page = 1
-            if page > total_pages:
+            if page > total_pages and total_pages > 0:
                 page = total_pages
             
             offset = (page - 1) * per_page
 
-            # 3. 查询分页数据
-            stmt = select(RedemptionCode).order_by(RedemptionCode.created_at.desc()).limit(per_page).offset(offset)
+            # 5. 查询分页数据
+            stmt = stmt.limit(per_page).offset(offset)
             result = await db_session.execute(stmt)
             codes = result.scalars().all()
 

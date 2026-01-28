@@ -41,11 +41,27 @@
 
 <!-- 操作栏 -->
 <div class="section-header">
-    <div class="filter-buttons">
-        <button onclick="filterByStatus('all')" class="btn btn-sm btn-secondary active" id="filter-all">全部</button>
-        <button onclick="filterByStatus('unused')" class="btn btn-sm btn-success" id="filter-unused">未使用</button>
-        <button onclick="filterByStatus('used')" class="btn btn-sm btn-info" id="filter-used">已使用</button>
-        <button onclick="filterByStatus('expired')" class="btn btn-sm btn-danger" id="filter-expired">已过期</button>
+    <div class="filter-and-search">
+        <div class="filter-buttons">
+            <button onclick="filterByStatus('all')" class="btn btn-sm btn-secondary active" id="filter-all">全部</button>
+            <button onclick="filterByStatus('unused')" class="btn btn-sm btn-success" id="filter-unused">未使用</button>
+            <button onclick="filterByStatus('used')" class="btn btn-sm btn-info" id="filter-used">已使用</button>
+            <button onclick="filterByStatus('expired')" class="btn btn-sm btn-danger" id="filter-expired">已过期</button>
+        </div>
+
+        <form action="/admin/codes" method="get" class="search-form">
+            <div class="search-input-group">
+                <input type="text" name="search" value="{{ search or '' }}" placeholder="搜索兑换码或邮箱..." class="btn-sm">
+                <button type="submit" class="btn btn-sm btn-secondary">
+                    <i data-lucide="search" style="width: 14px; height: 14px;"></i>
+                </button>
+                {% if search %}
+                <a href="/admin/codes" class="btn btn-sm btn-danger" title="清除搜索">
+                    <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+                </a>
+                {% endif %}
+            </div>
+        </form>
     </div>
     <div class="action-buttons">
         <button onclick="showModal('generateCodeModal')" class="btn btn-primary">生成兑换码</button>
@@ -112,20 +128,22 @@
     <!-- 分页 -->
     {% if pagination.total_pages > 1 %}
     <div class="pagination">
+        {% set search_param = '&search=' + search if search else '' %}
+
         {% if pagination.current_page > 1 %}
-        <a href="?page=1" class="btn btn-sm btn-secondary">首页</a>
-        <a href="?page={{ pagination.current_page - 1 }}" class="btn btn-sm btn-secondary">
+        <a href="?page=1{{ search_param }}" class="btn btn-sm btn-secondary">首页</a>
+        <a href="?page={{ pagination.current_page - 1 }}{{ search_param }}" class="btn btn-sm btn-secondary">
             <i data-lucide="chevron-left" style="width: 14px; height: 14px;"></i>
         </a>
         {% endif %}
 
         <span class="pagination-info">第 {{ pagination.current_page }} / {{ pagination.total_pages }} 页</span>
 
-        {% if pagination.current_page < pagination.total_pages %} <a href="?page={{ pagination.current_page + 1 }}"
-            class="btn btn-sm btn-secondary">
+        {% if pagination.current_page < pagination.total_pages %} <a
+            href="?page={{ pagination.current_page + 1 }}{{ search_param }}" class="btn btn-sm btn-secondary">
             <i data-lucide="chevron-right" style="width: 14px; height: 14px;"></i>
             </a>
-            <a href="?page={{ pagination.total_pages }}" class="btn btn-sm btn-secondary">末页</a>
+            <a href="?page={{ pagination.total_pages }}{{ search_param }}" class="btn btn-sm btn-secondary">末页</a>
             {% endif %}
     </div>
     {% endif %}
@@ -141,6 +159,36 @@
 
 {% block extra_css %}
 <style>
+    .filter-and-search {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+    }
+
+    .search-input-group {
+        display: flex;
+        align-items: center;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 2px;
+    }
+
+    .search-input-group input {
+        border: none;
+        background: transparent;
+        padding: 0.4rem 0.8rem;
+        outline: none;
+        color: var(--text-primary);
+        min-width: 200px;
+    }
+
+    .search-input-group .btn {
+        padding: 0.4rem 0.6rem;
+        border-radius: 4px;
+    }
+
     .pagination {
         display: flex;
         justify-content: center;
@@ -219,7 +267,11 @@
     // 导出兑换码
     async function exportCodes() {
         try {
-            const response = await fetch('/admin/codes/export');
+            const urlParams = new URLSearchParams(window.location.search);
+            const search = urlParams.get('search') || '';
+            const exportUrl = `/admin/codes/export${search ? '?search=' + encodeURIComponent(search) : ''}`;
+
+            const response = await fetch(exportUrl);
 
             if (response.ok) {
                 const blob = await response.blob();

@@ -433,6 +433,7 @@ async def revoke_team_invite(
 async def codes_list_page(
     request: Request,
     page: int = 1,
+    search: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
@@ -441,6 +442,8 @@ async def codes_list_page(
 
     Args:
         request: FastAPI Request 对象
+        page: 页码
+        search: 搜索关键词
         db: 数据库会话
         current_user: 当前用户（需要登录）
 
@@ -450,11 +453,11 @@ async def codes_list_page(
     try:
         from app.main import templates
 
-        logger.info("管理员访问兑换码列表页面")
+        logger.info(f"管理员访问兑换码列表页面, search={search}")
 
         # 获取兑换码 (分页)
         per_page = 50
-        codes_result = await redemption_service.get_all_codes(db, page=page, per_page=per_page)
+        codes_result = await redemption_service.get_all_codes(db, page=page, per_page=per_page, search=search)
         codes = codes_result.get("codes", [])
         total_codes = codes_result.get("total", 0)
         total_pages = codes_result.get("total_pages", 1)
@@ -494,6 +497,7 @@ async def codes_list_page(
                 "active_page": "codes",
                 "codes": codes,
                 "stats": stats,
+                "search": search,
                 "pagination": {
                     "current_page": current_page,
                     "total_pages": total_pages,
@@ -637,6 +641,7 @@ async def delete_code(
 
 @router.get("/codes/export")
 async def export_codes(
+    search: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
@@ -644,6 +649,7 @@ async def export_codes(
     导出兑换码为Excel文件
 
     Args:
+        search: 搜索关键词
         db: 数据库会话
         current_user: 当前用户（需要登录）
 
@@ -659,7 +665,7 @@ async def export_codes(
         logger.info("管理员导出兑换码为Excel")
 
         # 获取所有兑换码 (导出不分页，传入大数量)
-        codes_result = await redemption_service.get_all_codes(db, page=1, per_page=100000)
+        codes_result = await redemption_service.get_all_codes(db, page=1, per_page=100000, search=search)
         all_codes = codes_result.get("codes", [])
         
         # 结果可能带统计信息，我们只取 codes
