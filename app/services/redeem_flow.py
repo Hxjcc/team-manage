@@ -192,7 +192,11 @@ class RedeemFlowService:
                         return {"success": False, "error": "兑换码记录丢失"}
 
                     # 检查状态是否依然有效 (可能在循环间隙被别人捷足先登)
-                    if redemption_code.status not in ["unused", "warranty_active"]:
+                    allowed_statuses = ["unused", "warranty_active"]
+                    if redemption_code.has_warranty:
+                        allowed_statuses.append("used")
+
+                    if redemption_code.status not in allowed_statuses:
                         return {"success": False, "error": "兑换码已被使用"}
 
                     # 2. 选择 Team

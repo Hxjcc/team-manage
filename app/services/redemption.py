@@ -260,7 +260,11 @@ class RedemptionService:
                 }
 
             # 2. 检查状态
-            if redemption_code.status not in ["unused", "warranty_active"]:
+            allowed_statuses = ["unused", "warranty_active"]
+            if redemption_code.has_warranty:
+                allowed_statuses.append("used")
+
+            if redemption_code.status not in allowed_statuses:
                 status_text = "已过期" if redemption_code.status == "expired" else redemption_code.status
                 reason = "兑换码已被使用" if redemption_code.status == "used" else f"兑换码{status_text}"
                 return {
