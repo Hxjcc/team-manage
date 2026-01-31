@@ -37,14 +37,18 @@ class TeamService:
             bool: 是否已处理致命错误
         """
         error_code = result.get("error_code")
+        
+        # 处理账号封禁
         if error_code == "account_deactivated":
-            logger.warning(f"检测到账号封禁 (account_deactivated),更新 Team {team.id} 状态为 banned")
+            logger.warning(f"检测到账号封禁 (account_deactivated),更新 Team {team.id} ({team.email}) 状态为 banned")
             team.status = "banned"
             await db_session.commit()
             return True
-        
-        if error_code == "token_invalidated":
-            logger.warning(f"检测到 Token 失效 (token_invalidated),更新 Team {team.id} 状态为 error")
+            
+        # 处理 Token 失效
+        # OpenAI 可能会返回 token_invalidated 或者 invalid_grant (刷新时)
+        if error_code in ["token_invalidated", "invalid_grant"]:
+            logger.warning(f"检测到 Token 失效 ({error_code}),更新 Team {team.id} ({team.email}) 状态为 error")
             team.status = "error"
             await db_session.commit()
             return True
@@ -85,8 +89,15 @@ class TeamService:
                 new_at = refresh_result["access_token"]
                 logger.info(f"Team {team.id} 通过 session_token 成功刷新 AT")
                 team.access_token_encrypted = encryption_service.encrypt_token(new_at)
+                # 如果之前是 error 状态,恢复为 active (除非已满或过期)
+                if team.status == "error":
+                    team.status = "active"
                 await db_session.commit()
                 return new_at
+            else:
+                # 检查是否为致命错误 (如 token_invalidated)
+                if await self._handle_api_error(refresh_result, team, db_session):
+                    return None
 
         # 4. 尝试使用 refresh_token 刷新
         if team.refresh_token_encrypted and team.client_id:
@@ -101,11 +112,19 @@ class TeamService:
                 team.access_token_encrypted = encryption_service.encrypt_token(new_at)
                 if new_rt:
                     team.refresh_token_encrypted = encryption_service.encrypt_token(new_rt)
+                # 如果之前是 error 状态,恢复为 active
+                if team.status == "error":
+                    team.status = "active"
                 await db_session.commit()
                 return new_at
+            else:
+                # 检查是否为致命错误 (如 account_deactivated)
+                if await self._handle_api_error(refresh_result, team, db_session):
+                    return None
         
         logger.warning(f"Team {team.id} Token 已过期且刷新失败")
-        team.status = "error"
+        if team.status != "banned":
+            team.status = "error"
         await db_session.commit()
         return None
 
@@ -185,49 +204,50 @@ class TeamService:
                         "error": "无法从 Token 中提取邮箱,请手动提供邮箱"
                     }
 
-            # 2. 调用 ChatGPT API 获取账户信息
-            account_result = await self.chatgpt_service.get_account_info(
-                access_token,
-                db_session
-            )
-
-            if not account_result["success"]:
-                return {
-                    "success": False,
-                    "team_id": None,
-                    "message": None,
-                    "error": f"获取账户信息失败: {account_result['error']}"
-                }
-
-            team_accounts = account_result["accounts"]
-
-            if not team_accounts:
-                return {
-                    "success": False,
-                    "team_id": None,
-                    "message": None,
-                    "error": "该 Token 没有关联任何 Team 账户"
-                }
-
-            # 3. 确定要导入的账户列表
+            # 2. 确定要导入的账户列表
             accounts_to_import = []
+            team_accounts = []
 
             if account_id:
-                # 如果用户指定了 account_id, 查找对应的账户
-                for acc in team_accounts:
-                    if acc["account_id"] == account_id:
-                        accounts_to_import.append(acc)
-                        break
+                # 如果用户指定了 account_id, 就不再从 API 获取账户列表 (响应用户需求)
+                # 使用占位符元数据，后续同步会补全
+                selected_account = {
+                    "account_id": account_id,
+                    "name": f"Team-{account_id[:8]}",
+                    "plan_type": "team",
+                    "subscription_plan": "unknown",
+                    "expires_at": None,
+                    "has_active_subscription": True
+                }
+                accounts_to_import.append(selected_account)
+                team_accounts.append(selected_account)
+                logger.info(f"导入时直接使用提供的 account_id: {account_id}")
+            else:
+                # 3. 调用 ChatGPT API 获取账户列表
+                account_result = await self.chatgpt_service.get_account_info(
+                    access_token,
+                    db_session
+                )
 
-                if not accounts_to_import:
+                if not account_result["success"]:
                     return {
                         "success": False,
                         "team_id": None,
                         "message": None,
-                        "error": f"指定的 account_id {account_id} 不存在"
+                        "error": f"获取账户信息失败: {account_result['error']}"
                     }
-            else:
-                # 没指定 ID，导入所有活跃的 Team
+
+                team_accounts = account_result["accounts"]
+
+                if not team_accounts:
+                    return {
+                        "success": False,
+                        "team_id": None,
+                        "message": None,
+                        "error": "该 Token 没有关联任何 Team 账户"
+                    }
+
+                # 4. 自动选择活跃的账户
                 for acc in team_accounts:
                     if acc["has_active_subscription"]:
                         accounts_to_import.append(acc)

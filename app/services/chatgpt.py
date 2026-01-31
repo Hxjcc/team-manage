@@ -539,7 +539,8 @@ class ChatGPTService:
             
         try:
             response = await self.session.get(url, headers=headers, cookies=cookies)
-            if response.status_code == 200:
+            status_code = response.status_code
+            if status_code == 200:
                 data = response.json()
                 access_token = data.get("accessToken")
                 if access_token:
@@ -549,7 +550,27 @@ class ChatGPTService:
                     }
                 return {"success": False, "error": "响应中未包含 accessToken"}
             else:
-                return {"success": False, "error": f"刷新失败, 状态码: {response.status_code}, 响应: {response.text}"}
+                error_code = None
+                error_msg = response.text
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get("detail", error_msg)
+                    if isinstance(error_data, dict):
+                        error_info = error_data.get("error")
+                        if isinstance(error_info, dict):
+                            error_code = error_info.get("code")
+                        else:
+                            error_code = error_data.get("code")
+                except Exception:
+                    pass
+                
+                logger.warning(f"session_token 刷新失败 {status_code}: {error_msg} (code: {error_code})")
+                return {
+                    "success": False, 
+                    "status_code": status_code,
+                    "error": error_msg,
+                    "error_code": error_code
+                }
         except Exception as e:
             logger.error(f"session_token 刷新失败: {e}")
             return {"success": False, "error": str(e)}
@@ -592,7 +613,8 @@ class ChatGPTService:
             
         try:
             response = await self.session.post(url, headers=headers, json=json_data)
-            if response.status_code == 200:
+            status_code = response.status_code
+            if status_code == 200:
                 data = response.json()
                 return {
                     "success": True,
@@ -600,7 +622,24 @@ class ChatGPTService:
                     "refresh_token": data.get("refresh_token")
                 }
             else:
-                return {"success": False, "error": f"刷新失败, 状态码: {response.status_code}, 响应: {response.text}"}
+                error_code = None
+                error_msg = response.text
+                try:
+                    error_data = response.json()
+                    # OAuth 错误通常在 'error' 字段(字符串)中, 详细在 'error_description'
+                    if isinstance(error_data, dict):
+                        error_code = error_data.get("error")
+                        error_msg = error_data.get("error_description", error_msg)
+                except Exception:
+                    pass
+
+                logger.warning(f"refresh_token 刷新失败 {status_code}: {error_msg} (code: {error_code})")
+                return {
+                    "success": False,
+                    "status_code": status_code,
+                    "error": error_msg,
+                    "error_code": error_code
+                }
         except Exception as e:
             logger.error(f"refresh_token 刷新失败: {e}")
             return {"success": False, "error": str(e)}
