@@ -302,7 +302,22 @@ class WarrantyService:
                         "error": None
                     }
 
-            # 4. 查找该用户使用该兑换码的所有记录
+            # 4. 检查该兑换码是否已被其他邮箱绑定
+            stmt = select(RedemptionRecord).where(
+                RedemptionRecord.code == code
+            ).order_by(RedemptionRecord.redeemed_at.asc()).limit(1)
+            result = await db_session.execute(stmt)
+            first_record = result.scalar_one_or_none()
+            
+            if first_record and first_record.email != email:
+                return {
+                    "success": True,
+                    "can_reuse": False,
+                    "reason": f"该兑换码已由其他邮箱 ({first_record.email}) 绑定，不可跨账号使用",
+                    "error": None
+                }
+
+            # 5. 查找该用户使用该兑换码的所有记录
             stmt = select(RedemptionRecord).where(
                 and_(
                     RedemptionRecord.code == code,
