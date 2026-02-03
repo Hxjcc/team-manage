@@ -103,32 +103,53 @@ class RedeemFlowService:
 
     async def select_team_auto(
         self,
-        db_session: AsyncSession
+        db_session: AsyncSession,
+        email: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         自动选择 Team (选择过期时间最早的)
+        如果提供了 email，则自动排除该用户已经加入过的 Team
 
         Args:
             db_session: 数据库会话
+            email: 用户邮箱 (用于排除已加入的 Team)
 
         Returns:
             结果字典,包含 success, team_id, error
         """
         try:
-            # 查询可用 Team，按过期时间升序排序
+            # 1. 查找用户已经加入过的 Team ID
+            exclude_team_ids = []
+            if email:
+                stmt = select(RedemptionRecord.team_id).where(RedemptionRecord.email == email)
+                result = await db_session.execute(stmt)
+                exclude_team_ids = result.scalars().all()
+                if exclude_team_ids:
+                    logger.info(f"自动选择 Team: 排除用户 {email} 已加入的 Team IDs: {exclude_team_ids}")
+
+            # 2. 查询可用 Team，按过期时间升序排序
             stmt = select(Team).where(
                 Team.status == "active",
                 Team.current_members < Team.max_members
-            ).order_by(Team.expires_at.asc()).limit(1)
+            )
+            
+            # 排除已加入的 Team
+            if exclude_team_ids:
+                stmt = stmt.where(Team.id.not_in(exclude_team_ids))
+            
+            stmt = stmt.order_by(Team.expires_at.asc()).limit(1)
 
             result = await db_session.execute(stmt)
             team = result.scalar_one_or_none()
 
             if not team:
+                reason = "没有可用的 Team"
+                if exclude_team_ids:
+                    reason = "您已加入所有可用 Team"
                 return {
                     "success": False,
                     "team_id": None,
-                    "error": "没有可用的 Team"
+                    "error": reason
                 }
 
             logger.info(f"自动选择 Team: {team.id} (过期时间: {team.expires_at})")
@@ -201,7 +222,7 @@ class RedeemFlowService:
 
                     # 2. 选择 Team
                     if current_target_team_id is None:
-                        select_result = await self.select_team_auto(db_session)
+                        select_result = await self.select_team_auto(db_session, email=email)
                         if not select_result["success"]:
                             return {"success": False, "error": select_result["error"]}
                         team_id_final = select_result["team_id"]

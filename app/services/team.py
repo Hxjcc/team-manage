@@ -39,26 +39,50 @@ class TeamService:
         error_code = result.get("error_code")
         error_msg = str(result.get("error", "")).lower()
         
-        # 处理账号封禁/失效
-        # OpenAI 返回 account_deactivated 表示账号被封禁
-        # OpenAI 返回 token_invalidated 表示 Access Token 被吊销，通常也意味着 Team 被封或失效
-        is_banned = error_code in ["account_deactivated", "token_invalidated"]
+        # 1. 判定是否为“封号/永久失效”类致命错误
+        # 明确的错误码匹配
+        ban_codes = {
+            "account_deactivated", 
+            "token_invalidated", 
+            "account_suspended", 
+            "account_not_found",
+            "user_not_found"
+        }
+        is_banned = error_code in ban_codes
         
-        # 备选方案：检查错误消息文本（以防 error_code 提取失败）
+        # 关键词匹配 (针对不同接口返回的文本差异，尤其是刷新 Token 时 descripton 里的信息)
         if not is_banned:
-            if "token has been invalidated" in error_msg or "account_deactivated" in error_msg:
+            ban_keywords = [
+                "token has been invalidated", 
+                "account_deactivated",
+                "account has been deactivated",
+                "account is deactivated",
+                "account_suspended",
+                "account is suspended",
+                "account was deleted",
+                "user_not_found",
+                "session_invalidated",
+                "this account is deactivated"
+            ]
+            if any(kw in error_msg for kw in ban_keywords):
                 is_banned = True
                 
         if is_banned:
-            status_desc = "封禁" if "deactivated" in error_msg or error_code == "account_deactivated" else "失效"
-            logger.warning(f"检测到账号{status_desc} (code={error_code}), 更新 Team {team.id} ({team.email}) 状态为 banned")
+            # 简化状态描述判断
+            if any(x in error_msg for x in ["deactivated", "suspended", "not found", "deleted"]):
+                status_desc = "封禁"
+            else:
+                status_desc = "失效"
+                
+            logger.warning(f"检测到账号{status_desc} (code={error_code}, msg={error_msg}), 更新 Team {team.id} ({team.email}) 状态为 banned")
             team.status = "banned"
             await db_session.commit()
             return True
             
-        # 处理刷新失败 (仅针对刷新场景)
+        # 2. 处理常规刷新失败 (invalid_grant)
+        # 如果是 invalid_grant, 且上面没判定为封号, 则视为常规刷新异常（可能只是 RT/ST 过期或手动登出）
         if error_code == "invalid_grant" or "invalid_grant" in error_msg:
-            logger.warning(f"检测到刷新 Token 失败 (invalid_grant),累加 Team {team.id} ({team.email}) 错误次数")
+            logger.warning(f"检测到刷新 Token 失败 (invalid_grant), 累加 Team {team.id} ({team.email}) 错误次数")
             team.error_count = (team.error_count or 0) + 1
             if team.error_count >= 3:
                 logger.error(f"Team {team.id} 连续错误 {team.error_count} 次，标记为 error")
