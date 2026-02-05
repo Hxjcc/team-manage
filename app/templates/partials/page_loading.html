@@ -28,7 +28,8 @@
     var timers = [];
 
     var MIN_SHOW_MS = 260;
-    var NAV_FINISH_DELAY_MS = 360;
+    var FINISH_TRANSITION_MS = 320;
+    var NAV_TOTAL_MS = 1000;
     var CLEANUP_DELAY_MS = 520;
 
     function clearTimers() {
@@ -94,8 +95,10 @@
 
     function navigateWithBar(url) {
       try { sessionStorage.setItem('__skip_initial_loading_bar', '1'); } catch (_) { }
-      finish({ fade: false });
-      window.setTimeout(function () { window.location.href = url; }, NAV_FINISH_DELAY_MS);
+
+      var completeAt = Math.max(0, NAV_TOTAL_MS - FINISH_TRANSITION_MS - 20);
+      timers.push(window.setTimeout(function () { setProgress(1); }, completeAt));
+      timers.push(window.setTimeout(function () { window.location.href = url; }, NAV_TOTAL_MS));
     }
 
     var skip = false;
@@ -134,7 +137,8 @@
       navigateWithBar(url.href);
     });
 
-    document.addEventListener('submit', function () {
+    document.addEventListener('submit', function (e) {
+      if (e.defaultPrevented) return;
       start();
     });
   })();
