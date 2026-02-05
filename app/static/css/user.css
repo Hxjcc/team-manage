@@ -47,6 +47,23 @@ body {
     line-height: 1.5;
 }
 
+/* Lucide icons: reserve space to reduce layout shift (icons hydrate after JS runs) */
+i[data-lucide],
+span[data-lucide] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    flex: 0 0 1em;
+}
+
+svg.lucide {
+    display: block;
+    width: 1em;
+    height: 1em;
+}
+
 .container {
     max-width: 480px;
     width: 100%;
