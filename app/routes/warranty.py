@@ -3,12 +3,13 @@
 处理用户质保查询请求
 """
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services.warranty import warranty_service
+from app.utils.code_utils import normalize_code_input
 
 router = APIRouter(
     prefix="/warranty",
@@ -20,6 +21,11 @@ class WarrantyCheckRequest(BaseModel):
     """质保查询请求"""
     email: Optional[EmailStr] = None
     code: Optional[str] = None
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def _normalize_code(cls, value: str | None) -> str | None:
+        return normalize_code_input(value)
 
 
 class WarrantyCheckRecord(BaseModel):

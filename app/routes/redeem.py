@@ -4,12 +4,13 @@
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services.redeem_flow import redeem_flow_service
+from app.utils.code_utils import normalize_code_input
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +26,22 @@ class VerifyCodeRequest(BaseModel):
     """验证兑换码请求"""
     code: str = Field(..., description="兑换码", min_length=1)
 
+    @field_validator("code", mode="before")
+    @classmethod
+    def _normalize_code(cls, value: str) -> str:
+        return normalize_code_input(value)  # type: ignore[return-value]
+
 
 class RedeemRequest(BaseModel):
     """兑换请求"""
     email: EmailStr = Field(..., description="用户邮箱")
     code: str = Field(..., description="兑换码", min_length=1)
     team_id: Optional[int] = Field(None, description="Team ID (可选，不提供则自动选择)")
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def _normalize_code(cls, value: str) -> str:
+        return normalize_code_input(value)  # type: ignore[return-value]
 
 
 # 响应模型

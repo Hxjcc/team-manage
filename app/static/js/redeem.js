@@ -19,6 +19,21 @@ let currentCode = '';
 let availableTeams = [];
 let selectedTeamId = null;
 
+function normalizeInputCode(raw) {
+    if (raw === null || raw === undefined) return '';
+    const text = String(raw).trim();
+    if (!text) return '';
+
+    const standard = text.match(/[A-Za-z0-9]{4}(?:-[A-Za-z0-9]{4}){3}/);
+    if (standard) return standard[0];
+
+    const generic = text.match(/(?=.*[A-Za-z])[A-Za-z0-9-]{8,32}/);
+    if (generic) return generic[0];
+
+    const firstLine = text.split(/\r?\n/).map(l => l.trim()).find(Boolean) || '';
+    return (firstLine.split(/\s+/)[0] || '').trim();
+}
+
 // Toast提示函数
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
@@ -63,7 +78,9 @@ document.getElementById('verifyForm').addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const email = document.getElementById('email').value.trim();
-    const code = document.getElementById('code').value.trim();
+    const codeInput = document.getElementById('code');
+    const rawCode = codeInput.value;
+    const code = normalizeInputCode(rawCode);
     const verifyBtn = document.getElementById('verifyBtn');
 
     // 验证
@@ -75,6 +92,7 @@ document.getElementById('verifyForm').addEventListener('submit', async (e) => {
     // 保存到全局变量
     currentEmail = email;
     currentCode = code;
+    codeInput.value = code;
 
     // 禁用按钮
     verifyBtn.disabled = true;
@@ -298,7 +316,9 @@ function formatDate(dateString) {
 
 // 查询质保状态
 async function checkWarranty() {
-    const input = document.getElementById('warrantyInput').value.trim();
+    const inputEl = document.getElementById('warrantyInput');
+    const rawInput = inputEl.value;
+    const input = normalizeInputCode(rawInput);
 
     // 验证输入
     if (!input) {
@@ -315,6 +335,8 @@ async function checkWarranty() {
     } else {
         code = input;
     }
+
+    inputEl.value = input;
 
     const checkBtn = document.getElementById('checkWarrantyBtn');
     checkBtn.disabled = true;
