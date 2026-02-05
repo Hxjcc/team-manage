@@ -597,8 +597,8 @@ async def codes_list_page(
                 code["used_at"] = dt.strftime("%Y-%m-%d %H:%M")
 
         # 绑定 Team 的价格信息 (用于按剩余时间展示)
-        from sqlalchemy import select
-        from app.models import Team
+        from sqlalchemy import select, func
+        from app.models import Team, RedemptionRecord
         from app.utils.pricing import calculate_remaining_days, calculate_price_cents, format_price_yuan
         from app.utils.time_utils import get_now
         from datetime import timedelta
@@ -638,26 +638,41 @@ async def codes_list_page(
                     code["display_remaining_days"] = remaining_days
                     code["display_price_yuan"] = format_price_yuan(price_cents)
 
-            # 质保剩余天数展示: 优先使用 warranty_expires_at，否则用 created_at + warranty_days 兜底
+        # 质保剩余天数展示：从“首次使用/兑换成功”开始计时
+        warranty_codes = [c["code"] for c in codes if c.get("has_warranty") and c.get("status") != "unused"]
+        activation_map = {}
+        if warranty_codes:
+            stmt = (
+                select(RedemptionRecord.code, func.min(RedemptionRecord.redeemed_at))
+                .where(RedemptionRecord.code.in_(warranty_codes))
+                .group_by(RedemptionRecord.code)
+            )
+            result = await db.execute(stmt)
+            activation_map = {code: activated_at for code, activated_at in result.all()}
+
+        now = get_now()
+        for code in codes:
             code["warranty_remaining_days"] = None
-            if code.get("has_warranty"):
-                warranty_expires_at_dt = None
-                if code.get("warranty_expires_at"):
-                    try:
-                        warranty_expires_at_dt = datetime.fromisoformat(code["warranty_expires_at"])
-                    except Exception:
-                        warranty_expires_at_dt = None
+            if not code.get("has_warranty"):
+                continue
+            if code.get("status") == "unused":
+                # 未使用/未激活：不倒计时，显示固定天数
+                continue
 
-                if not warranty_expires_at_dt and code.get("created_at") and code.get("warranty_days"):
-                    try:
-                        created_dt = datetime.fromisoformat(code["created_at"])
-                        warranty_expires_at_dt = created_dt + timedelta(days=int(code.get("warranty_days") or 0))
-                    except Exception:
-                        warranty_expires_at_dt = None
+            activated_at = activation_map.get(code["code"])
+            days = int(code.get("warranty_days") or 30)
+            expiry_dt = None
 
-                if warranty_expires_at_dt:
-                    now = get_now()
-                    code["warranty_remaining_days"] = max((warranty_expires_at_dt.date() - now.date()).days, 0)
+            if activated_at:
+                expiry_dt = activated_at + timedelta(days=days)
+            elif code.get("warranty_expires_at"):
+                try:
+                    expiry_dt = datetime.fromisoformat(code["warranty_expires_at"])
+                except Exception:
+                    expiry_dt = None
+
+            if expiry_dt:
+                code["warranty_remaining_days"] = max((expiry_dt.date() - now.date()).days, 0)
 
         return templates.TemplateResponse(
             "admin/codes/index.html",

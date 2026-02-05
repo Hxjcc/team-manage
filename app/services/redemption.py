@@ -197,10 +197,6 @@ class RedemptionService:
             if expires_days:
                 expires_at = get_now() + timedelta(days=expires_days)
 
-            warranty_expires_at = None
-            if has_warranty:
-                warranty_expires_at = get_now() + timedelta(days=int(warranty_days or 30))
-
             # 3. 创建兑换码记录
             redemption_code = RedemptionCode(
                 code=code,
@@ -209,7 +205,7 @@ class RedemptionService:
                 bound_team_id=bound_team_id,
                 has_warranty=has_warranty,
                 warranty_days=warranty_days,
-                warranty_expires_at=warranty_expires_at
+                warranty_expires_at=None
             )
 
             db_session.add(redemption_code)
@@ -343,10 +339,6 @@ class RedemptionService:
             if expires_days:
                 expires_at = get_now() + timedelta(days=expires_days)
 
-            warranty_expires_at = None
-            if has_warranty:
-                warranty_expires_at = get_now() + timedelta(days=int(warranty_days or 30))
-
             # 批量生成兑换码
             codes: List[str] = []
             code_team_map: Dict[str, int] = {}
@@ -388,7 +380,7 @@ class RedemptionService:
                     bound_team_id=code_team_map.get(code_value) if code_team_map else bound_team_id,
                     has_warranty=has_warranty,
                     warranty_days=warranty_days,
-                    warranty_expires_at=warranty_expires_at
+                    warranty_expires_at=None
                 )
                 db_session.add(redemption_code)
 

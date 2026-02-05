@@ -310,8 +310,7 @@ class RedeemFlowService:
                         redemption_code.status = "warranty_active"
                         if is_first_use:
                             warranty_days = redemption_code.warranty_days or 30
-                            if not redemption_code.warranty_expires_at:
-                                redemption_code.warranty_expires_at = get_now() + timedelta(days=warranty_days)
+                            redemption_code.warranty_expires_at = get_now() + timedelta(days=warranty_days)
                     else:
                         redemption_code.status = "used"
                     

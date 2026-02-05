@@ -5,7 +5,7 @@
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
-from sqlalchemy import select, and_, or_
+from sqlalchemy import select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import RedemptionCode, RedemptionRecord, Team
@@ -102,25 +102,37 @@ class WarrantyService:
                         }
                     
                     # 只有码没有记录的情况
+                    # 注意：质保期从“首次使用”开始计时；未使用的质保码不应提前过期
+                    display_expiry = None
+                    if redemption_code_obj.has_warranty and redemption_code_obj.status != "unused":
+                        display_expiry = redemption_code_obj.warranty_expires_at
+
+                    warranty_valid = False
+                    if redemption_code_obj.has_warranty:
+                        if redemption_code_obj.status == "unused":
+                            warranty_valid = True
+                        else:
+                            warranty_valid = True if display_expiry and display_expiry > get_now() else False
+
                     return {
                         "success": True,
                         "has_warranty": redemption_code_obj.has_warranty,
-                        "warranty_valid": True if not redemption_code_obj.warranty_expires_at or redemption_code_obj.warranty_expires_at > get_now() else False,
-                        "warranty_expires_at": redemption_code_obj.warranty_expires_at.isoformat() if redemption_code_obj.warranty_expires_at else None,
+                        "warranty_valid": warranty_valid,
+                        "warranty_expires_at": display_expiry.isoformat() if display_expiry else None,
                         "banned_teams": [],
                         "can_reuse": False,
                         "original_code": redemption_code_obj.code,
                         "records": [{
                             "code": redemption_code_obj.code,
                             "has_warranty": redemption_code_obj.has_warranty,
-                            "warranty_valid": True if not redemption_code_obj.warranty_expires_at or redemption_code_obj.warranty_expires_at > get_now() else False,
+                            "warranty_valid": warranty_valid,
                             "status": redemption_code_obj.status,
                             "used_at": None,
                             "team_id": None,
                             "team_name": None,
                             "team_status": None,
                             "team_expires_at": None,
-                            "warranty_expires_at": redemption_code_obj.warranty_expires_at.isoformat() if redemption_code_obj.warranty_expires_at else None
+                            "warranty_expires_at": display_expiry.isoformat() if display_expiry else None
                         }],
                         "message": "兑换码尚未被使用"
                     }
@@ -169,6 +181,18 @@ class WarrantyService:
             primary_code = None
             can_reuse = False
 
+            # 为动态兜底计算准备“首次使用时间”(min redeemed_at)
+            code_set = {code_obj.code for _, code_obj, _ in records_data if code_obj.has_warranty}
+            activation_map = {}
+            if code_set:
+                stmt = (
+                    select(RedemptionRecord.code, func.min(RedemptionRecord.redeemed_at))
+                    .where(RedemptionRecord.code.in_(list(code_set)))
+                    .group_by(RedemptionRecord.code)
+                )
+                result = await db_session.execute(stmt)
+                activation_map = {c: activated_at for c, activated_at in result.all()}
+
             for record, code_obj, team in records_data:
                 # 同步 Team 状态
                 if team.status not in ["banned", "error"]:
@@ -179,22 +203,21 @@ class WarrantyService:
                 # 动态计算/提取质保信息
                 expiry_date = code_obj.warranty_expires_at
                 
-                # 如果是质保码且已使用，但到期时间为空，尝试动态计算
-                if code_obj.has_warranty and not expiry_date:
-                    start_time = code_obj.used_at or record.redeemed_at # 优先取首次使用时间
+                # 注意：质保期从“首次使用”开始计时；如果数据库中已有到期时间但早于首次使用+质保天数，以首次使用为准
+                if code_obj.has_warranty:
+                    start_time = activation_map.get(code_obj.code) or code_obj.used_at or record.redeemed_at
                     if start_time:
                         days = code_obj.warranty_days or 30
-                        expiry_date = start_time + timedelta(days=days)
+                        expected_expiry = start_time + timedelta(days=days)
+                        if not expiry_date or expiry_date < expected_expiry:
+                            expiry_date = expected_expiry
 
-                is_valid = True
-                if expiry_date and expiry_date < get_now():
-                    is_valid = False
-                elif not expiry_date and code_obj.has_warranty and code_obj.status == "unused":
-                    # 未使用的质保码，暂时标记为有效
-                    is_valid = True
-                elif not expiry_date:
-                    # 既没日期也没记录，通常是非质保码
-                    is_valid = False
+                is_valid = False
+                if code_obj.has_warranty:
+                    if code_obj.status == "unused":
+                        is_valid = True
+                    elif expiry_date and expiry_date > get_now():
+                        is_valid = True
 
                 if code_obj.has_warranty:
                     has_any_warranty = True
@@ -293,14 +316,37 @@ class WarrantyService:
                 }
 
             # 3. 检查质保期是否有效
-            if redemption_code.warranty_expires_at:
-                if redemption_code.warranty_expires_at < get_now():
-                    return {
-                        "success": True,
-                        "can_reuse": False,
-                        "reason": "质保已过期",
-                        "error": None
-                    }
+            now = get_now()
+            expiry_dt = redemption_code.warranty_expires_at
+            expected_expiry = None
+
+            stmt = select(func.min(RedemptionRecord.redeemed_at)).where(RedemptionRecord.code == code)
+            result = await db_session.execute(stmt)
+            activated_at = result.scalar_one_or_none()
+            days = redemption_code.warranty_days or 30
+            if activated_at:
+                expected_expiry = activated_at + timedelta(days=days)
+            elif redemption_code.used_at:
+                expected_expiry = redemption_code.used_at + timedelta(days=days)
+
+            if expected_expiry and (not expiry_dt or expiry_dt < expected_expiry):
+                expiry_dt = expected_expiry
+
+            if expiry_dt and expiry_dt < now:
+                return {
+                    "success": True,
+                    "can_reuse": False,
+                    "reason": "质保已过期",
+                    "error": None
+                }
+
+            if not expiry_dt:
+                return {
+                    "success": True,
+                    "can_reuse": False,
+                    "reason": "质保状态异常，请联系管理员",
+                    "error": None
+                }
 
             # 4. 检查该兑换码当前是否已有正在使用的活跃 Team (全局检查，不限邮箱)
             # 逻辑：如果该码名下有任何一个 Team 还是 active/full 状态且未过期，则不允许新的激活
