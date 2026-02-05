@@ -159,6 +159,27 @@ body {
     margin-right: 0.875rem;
     display: flex;
     align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+}
+
+/* Lucide icons: reserve space to reduce layout shift (icons hydrate after JS runs) */
+i[data-lucide],
+span[data-lucide] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+}
+
+svg.lucide {
+    display: block;
+    width: 24px;
+    height: 24px;
 }
 
 .main-content {

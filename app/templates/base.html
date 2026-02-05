@@ -364,10 +364,10 @@
     </div>
     <div id="toast" class="toast"></div>
 
-    <script src="{{ url_for('static', path='/js/main.js') }}?v={{ static_version }}"></script>
     <script>
-        lucide.createIcons();
+        if (window.lucide) lucide.createIcons();
     </script>
+    <script src="{{ url_for('static', path='/js/main.js') }}?v={{ static_version }}"></script>
     {% block extra_js %}{% endblock %}
 </body>
 
