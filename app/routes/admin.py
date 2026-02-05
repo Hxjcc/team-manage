@@ -600,6 +600,8 @@ async def codes_list_page(
         from sqlalchemy import select
         from app.models import Team
         from app.utils.pricing import calculate_remaining_days, calculate_price_cents, format_price_yuan
+        from app.utils.time_utils import get_now
+        from datetime import timedelta
 
         team_ids = set()
         for c in codes:
@@ -635,6 +637,27 @@ async def codes_list_page(
                     code["display_team_name"] = team.team_name or f"Team {team.id}"
                     code["display_remaining_days"] = remaining_days
                     code["display_price_yuan"] = format_price_yuan(price_cents)
+
+            # 质保剩余天数展示: 优先使用 warranty_expires_at，否则用 created_at + warranty_days 兜底
+            code["warranty_remaining_days"] = None
+            if code.get("has_warranty"):
+                warranty_expires_at_dt = None
+                if code.get("warranty_expires_at"):
+                    try:
+                        warranty_expires_at_dt = datetime.fromisoformat(code["warranty_expires_at"])
+                    except Exception:
+                        warranty_expires_at_dt = None
+
+                if not warranty_expires_at_dt and code.get("created_at") and code.get("warranty_days"):
+                    try:
+                        created_dt = datetime.fromisoformat(code["created_at"])
+                        warranty_expires_at_dt = created_dt + timedelta(days=int(code.get("warranty_days") or 0))
+                    except Exception:
+                        warranty_expires_at_dt = None
+
+                if warranty_expires_at_dt:
+                    now = get_now()
+                    code["warranty_remaining_days"] = max((warranty_expires_at_dt.date() - now.date()).days, 0)
 
         return templates.TemplateResponse(
             "admin/codes/index.html",

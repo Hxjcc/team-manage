@@ -159,7 +159,11 @@
                     </td>
                     <td>
                         {% if code.has_warranty %}
+                        {% if code.warranty_remaining_days is not none %}
+                        <span style="font-size: 0.875rem;">{{ code.warranty_remaining_days }} 天</span>
+                        {% else %}
                         <span style="font-size: 0.875rem;">{{ code.warranty_days }} 天</span>
+                        {% endif %}
                         {% else %}
                         -
                         {% endif %}
