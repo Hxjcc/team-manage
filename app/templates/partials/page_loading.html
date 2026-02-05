@@ -1,0 +1,79 @@
+<style>
+  /* 简易顶部加载进度条（页面跳转/加载时） */
+  html.__page-loading::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 2px;
+    width: 100%;
+    background: #22c55e;
+    transform-origin: 0 50%;
+    animation: pageProgress 1.2s ease-out infinite;
+    z-index: 9999;
+    pointer-events: none;
+  }
+
+  @keyframes pageProgress {
+    0% {
+      transform: scaleX(0.08);
+      opacity: 1;
+    }
+
+    60% {
+      transform: scaleX(0.7);
+      opacity: 1;
+    }
+
+    100% {
+      transform: scaleX(0.95);
+      opacity: 0.25;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html.__page-loading::before {
+      animation: none;
+      transform: scaleX(0.6);
+      opacity: 0.85;
+    }
+  }
+</style>
+<script>
+  (function () {
+    var root = document.documentElement;
+    root.classList.add('__page-loading');
+
+    function stop() {
+      root.classList.remove('__page-loading');
+    }
+
+    window.addEventListener('load', stop);
+    window.addEventListener('pageshow', stop);
+
+    document.addEventListener('click', function (e) {
+      if (e.defaultPrevented) return;
+      if (e.button !== 0) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+
+      var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+      if (!a) return;
+
+      var href = a.getAttribute('href');
+      if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+
+      try {
+        var url = new URL(href, window.location.href);
+        if (url.origin !== window.location.origin) return;
+      } catch (_) {
+        // ignore
+      }
+
+      root.classList.add('__page-loading');
+    });
+
+    document.addEventListener('submit', function () {
+      root.classList.add('__page-loading');
+    });
+  })();
+</script>
