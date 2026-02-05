@@ -172,7 +172,10 @@
                     </td>
                     <td style="text-align: right;">
                         <div class="action-buttons" style="justify-content: flex-end;">
-                            <button onclick="copyCode('{{ code.code }}')"
+                            <button
+                                data-code="{{ code.code }}"
+                                data-price="{% if code.status in ['used', 'warranty_active'] %}已支付{% elif code.display_price_yuan %}￥{{ code.display_price_yuan }}{% endif %}"
+                                onclick="copyCode(this.dataset.code, this.dataset.price)"
                                 class="btn btn-sm btn-icon btn-minimal btn-secondary" title="复制">
                                 <i data-lucide="copy" style="width: 14px; height: 14px;"></i>
                             </button>

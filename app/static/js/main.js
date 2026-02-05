@@ -724,7 +724,7 @@ async function copyToClipboard(text) {
 
 // === 辅助函数 ===
 
-function copyCode(code) {
+function copyCode(code, priceText = '') {
     // 如果没有传入 code，尝试从生成结果中获取
     if (!code) {
         const generatedCodeEl = document.getElementById('generatedCode');
@@ -732,7 +732,9 @@ function copyCode(code) {
     }
 
     if (code) {
-        copyToClipboard(code);
+        const extra = (priceText || '').trim();
+        const text = extra ? `${code}\n${extra}` : code;
+        copyToClipboard(text);
     } else {
         showToast('无内容可复制', 'error');
     }
