@@ -173,13 +173,17 @@ const CODE_GEN_TEAMS_CACHE_TTL_MS = 30 * 1000;
 
 function _formatTeamOptionLabel(team) {
     const name = team.team_name || `Team ${team.id}`;
-    const email = team.email ? `(${team.email})` : '';
     const members = `${team.current_members}/${team.max_members}`;
     const availableSeats = (team.available_seats === null || team.available_seats === undefined) ? null : team.available_seats;
     const remainingDaysText = (team.remaining_days === null || team.remaining_days === undefined) ? '未知' : `${team.remaining_days}天`;
     const priceText = team.price_yuan ? `￥${team.price_yuan}` : '未知';
-    const seatsText = availableSeats === null ? '' : ` | 可用${availableSeats}`;
-    return `#${team.id} ${name} ${email} | ${members}${seatsText} | 剩余${remainingDaysText} | ${priceText}`;
+    const seatsText = availableSeats === null ? '' : `可用${availableSeats}`;
+
+    const parts = [`#${team.id} ${name}`, `(${members})`];
+    if (seatsText) parts.push(seatsText);
+    parts.push(`剩余${remainingDaysText}`);
+    parts.push(priceText);
+    return parts.join(' · ');
 }
 
 function _populateTeamSelect(selectEl, teams) {
@@ -206,35 +210,123 @@ function _populateTeamSelect(selectEl, teams) {
     }
 }
 
-function _updateTeamPriceHint(selectEl, hintEl, teams) {
-    if (!selectEl || !hintEl) return;
+function _createHintBadge(text, variantClass) {
+    const badge = document.createElement('span');
+    badge.className = `status-badge ${variantClass}`;
+    badge.textContent = text;
+    return badge;
+}
 
-    const value = selectEl.value;
-    let team = null;
-    let prefix = '';
+function _setHintEmpty(hintEl, message) {
+    if (!hintEl) return;
+    hintEl.innerHTML = '';
+    hintEl.style.display = '';
 
-    if (!value) {
-        if (!teams || teams.length === 0) {
-            hintEl.textContent = '暂无可用 Team';
-            return;
-        }
-        team = teams[0];
-        prefix = '自动绑定：';
-    } else {
-        team = teams.find(t => String(t.id) === String(value));
-        prefix = '当前选择：';
-    }
-    if (!team) {
-        hintEl.textContent = '';
-        return;
-    }
+    const header = document.createElement('div');
+    header.className = 'team-bind-hint__header';
+    header.appendChild(_createHintBadge('提示', 'status-info'));
 
+    const title = document.createElement('span');
+    title.className = 'team-bind-hint__title';
+    title.textContent = message;
+    header.appendChild(title);
+
+    hintEl.appendChild(header);
+}
+
+function _renderSingleTeamHint(hintEl, modeLabel, modeVariant, team) {
+    hintEl.innerHTML = '';
+    hintEl.style.display = '';
+
+    const header = document.createElement('div');
+    header.className = 'team-bind-hint__header';
+    header.appendChild(_createHintBadge(modeLabel, modeVariant));
+
+    const title = document.createElement('span');
+    title.className = 'team-bind-hint__title';
     const name = team.team_name || `Team ${team.id}`;
+    title.textContent = `#${team.id} ${name}`;
+    header.appendChild(title);
+    hintEl.appendChild(header);
+
+    const meta = document.createElement('div');
+    meta.className = 'team-bind-hint__meta';
+
     const expiresText = team.expires_at ? formatDateTime(team.expires_at) : '-';
     const remainingDaysText = (team.remaining_days === null || team.remaining_days === undefined) ? '未知' : `${team.remaining_days} 天`;
     const priceText = team.price_yuan ? `￥${team.price_yuan}` : '未知';
-    const availableSeatsText = (team.available_seats === null || team.available_seats === undefined) ? '' : `，可用席位：${team.available_seats}`;
-    hintEl.textContent = `${prefix}${name}（到期：${expiresText}，剩余：${remainingDaysText}，价格：${priceText}${availableSeatsText}）`;
+    const availableSeatsText = (team.available_seats === null || team.available_seats === undefined) ? '未知' : String(team.available_seats);
+
+    meta.appendChild(_createHintBadge(`到期 ${expiresText}`, 'status-info'));
+    meta.appendChild(_createHintBadge(`剩余 ${remainingDaysText}`, 'status-warning'));
+    meta.appendChild(_createHintBadge(`可用席位 ${availableSeatsText}`, 'status-active'));
+    meta.appendChild(_createHintBadge(`价格 ${priceText}`, 'status-info'));
+
+    hintEl.appendChild(meta);
+
+    if (team.email) {
+        const sub = document.createElement('div');
+        sub.className = 'team-bind-hint__sub';
+        sub.textContent = `管理员邮箱：${team.email}`;
+        hintEl.appendChild(sub);
+    }
+}
+
+function _renderBatchAutoHint(hintEl, teams) {
+    hintEl.innerHTML = '';
+    hintEl.style.display = '';
+
+    const header = document.createElement('div');
+    header.className = 'team-bind-hint__header';
+    header.appendChild(_createHintBadge('自动分配', 'status-info'));
+
+    const title = document.createElement('span');
+    title.className = 'team-bind-hint__title';
+    title.textContent = '按到期时间分配到多个 Team';
+    header.appendChild(title);
+    hintEl.appendChild(header);
+
+    const meta = document.createElement('div');
+    meta.className = 'team-bind-hint__meta';
+    meta.appendChild(_createHintBadge(`可用 Team ${teams.length} 个`, 'status-info'));
+    hintEl.appendChild(meta);
+
+    const sub = document.createElement('div');
+    sub.className = 'team-bind-hint__sub';
+    sub.textContent = '生成后可在列表查看每个兑换码绑定的 Team 与价格。';
+    hintEl.appendChild(sub);
+}
+
+function _updateTeamPriceHint(selectEl, hintEl, teams, options = {}) {
+    if (!selectEl || !hintEl) return;
+
+    const value = selectEl.value;
+
+    if (!teams || teams.length === 0) {
+        _setHintEmpty(hintEl, '暂无可用 Team');
+        return;
+    }
+
+    const mode = options.mode || 'single';
+
+    // 批量模式：未选择 Team 时，提示将自动分配到多个 Team
+    if (mode === 'batch' && !value) {
+        _renderBatchAutoHint(hintEl, teams);
+        return;
+    }
+
+    const team = value ? teams.find(t => String(t.id) === String(value)) : teams[0];
+    if (!team) {
+        _setHintEmpty(hintEl, '请选择有效的 Team');
+        return;
+    }
+
+    if (!value) {
+        _renderSingleTeamHint(hintEl, '自动绑定', 'status-info', team);
+        return;
+    }
+
+    _renderSingleTeamHint(hintEl, '已选择', 'status-active', team);
 }
 
 async function initGenerateCodeModal() {
@@ -252,16 +344,16 @@ async function initGenerateCodeModal() {
         _populateTeamSelect(batchSelect, teams);
 
         if (singleSelect && !singleSelect.dataset.bound) {
-            singleSelect.addEventListener('change', () => _updateTeamPriceHint(singleSelect, singleHint, teams));
+            singleSelect.addEventListener('change', () => _updateTeamPriceHint(singleSelect, singleHint, _codeGenTeamsCache, { mode: 'single' }));
             singleSelect.dataset.bound = '1';
         }
         if (batchSelect && !batchSelect.dataset.bound) {
-            batchSelect.addEventListener('change', () => _updateTeamPriceHint(batchSelect, batchHint, teams));
+            batchSelect.addEventListener('change', () => _updateTeamPriceHint(batchSelect, batchHint, _codeGenTeamsCache, { mode: 'batch' }));
             batchSelect.dataset.bound = '1';
         }
 
-        _updateTeamPriceHint(singleSelect, singleHint, teams);
-        _updateTeamPriceHint(batchSelect, batchHint, teams);
+        _updateTeamPriceHint(singleSelect, singleHint, teams, { mode: 'single' });
+        _updateTeamPriceHint(batchSelect, batchHint, teams, { mode: 'batch' });
     } catch (e) {
         // 错误在 fetchCodeGenTeams 内部已提示
     }

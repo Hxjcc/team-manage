@@ -218,7 +218,7 @@
                                 <option value="">自动选择并绑定（按最早到期）</option>
                             </select>
                             <small class="form-text">不选则系统自动选择并绑定一个 Team；价格按剩余天数计算（30天=15元）。</small>
-                            <small class="form-text" id="single-team-price-hint"></small>
+                            <div id="single-team-price-hint" class="team-bind-hint" style="display: none;"></div>
                         </div>
                         <div class="form-group">
                             <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
@@ -261,7 +261,7 @@
                                 <option value="">自动分配并绑定（按最早到期优先）</option>
                             </select>
                             <small class="form-text">不选则系统按到期时间自动分配并绑定到多个 Team；价格按剩余天数计算（30天=15元）。</small>
-                            <small class="form-text" id="batch-team-price-hint"></small>
+                            <div id="batch-team-price-hint" class="team-bind-hint" style="display: none;"></div>
                         </div>
                         <div class="form-group">
                             <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
