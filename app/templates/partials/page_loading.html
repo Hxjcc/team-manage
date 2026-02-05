@@ -50,6 +50,7 @@
 
     window.addEventListener('load', stop);
     window.addEventListener('pageshow', stop);
+    window.setTimeout(stop, 12000);
 
     document.addEventListener('click', function (e) {
       if (e.defaultPrevented) return;
@@ -58,6 +59,7 @@
 
       var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
       if (!a) return;
+      if (a.target && a.target !== '_self') return;
 
       var href = a.getAttribute('href');
       if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
