@@ -579,7 +579,8 @@ async def codes_list_page(
         stats = {
             "total": total_codes,
             "unused": len([c for c in all_codes if c["status"] == "unused"]),
-            "used": len([c for c in all_codes if c["status"] == "used"]),
+            # 已使用：普通码 used + 质保码 warranty_active
+            "used": len([c for c in all_codes if c["status"] in ["used", "warranty_active"]]),
             "expired": len([c for c in all_codes if c["status"] == "expired"])
         }
 

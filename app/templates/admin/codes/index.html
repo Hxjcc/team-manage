@@ -440,7 +440,8 @@
         const rows = document.querySelectorAll('#codesTableBody tr');
         rows.forEach(row => {
             const rowStatus = row.getAttribute('data-status');
-            if (status === 'all' || rowStatus === status) {
+            const isUsedFilter = status === 'used' && (rowStatus === 'used' || rowStatus === 'warranty_active');
+            if (status === 'all' || rowStatus === status || isUsedFilter) {
                 row.style.display = '';
             } else {
                 row.style.display = 'none';
