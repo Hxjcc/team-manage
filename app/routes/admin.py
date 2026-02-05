@@ -73,16 +73,9 @@ class TeamUpdateRequest(BaseModel):
     status: Optional[str] = Field(None, description="状态: active/full/expired/error/banned")
 
 
-class CodeUpdateRequest(BaseModel):
-    """兑换码更新请求"""
-    has_warranty: bool = Field(..., description="是否为质保兑换码")
-    warranty_days: Optional[int] = Field(None, description="质保天数")
-
-class BulkCodeUpdateRequest(BaseModel):
-    """批量兑换码更新请求"""
+class BulkCodeDeleteRequest(BaseModel):
+    """批量删除兑换码请求"""
     codes: List[str] = Field(..., description="兑换码列表")
-    has_warranty: bool = Field(..., description="是否为质保兑换码")
-    warranty_days: Optional[int] = Field(None, description="质保天数")
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -951,54 +944,61 @@ async def export_codes(
         )
 
 
-@router.post("/codes/{code}/update")
-async def update_code(
-    code: str,
-    update_data: CodeUpdateRequest,
+@router.post("/codes/bulk-delete")
+async def bulk_delete_codes(
+    delete_data: BulkCodeDeleteRequest,
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(require_admin)
 ):
-    """更新兑换码信息"""
+    """批量删除兑换码（仅未使用可删除）"""
     try:
-        result = await redemption_service.update_code(
-            code=code,
-            db_session=db,
-            has_warranty=update_data.has_warranty,
-            warranty_days=update_data.warranty_days
-        )
-        if not result["success"]:
-            return JSONResponse(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                content=result
-            )
-        return JSONResponse(content=result)
-    except Exception as e:
+        from sqlalchemy import select
+        from app.models import RedemptionCode
+
+        codes = [c.strip() for c in (delete_data.codes or []) if c and c.strip()]
+        # 去重但保持顺序
+        seen = set()
+        codes = [c for c in codes if not (c in seen or seen.add(c))]
+
+        if not codes:
+            return JSONResponse(content={"success": True, "deleted": 0, "skipped": [], "not_found": []})
+
+        stmt = select(RedemptionCode).where(RedemptionCode.code.in_(codes))
+        result = await db.execute(stmt)
+        objs = {obj.code: obj for obj in result.scalars().all()}
+
+        deleted = []
+        skipped = []
+        not_found = []
+
+        for code in codes:
+            obj = objs.get(code)
+            if not obj:
+                not_found.append(code)
+                continue
+            if obj.status != "unused":
+                skipped.append({"code": code, "reason": f"状态为 {obj.status}，不可删除"})
+                continue
+
+            await db.delete(obj)
+            deleted.append(code)
+
+        await db.commit()
+
         return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": str(e)}
+            content={
+                "success": True,
+                "deleted": len(deleted),
+                "deleted_codes": deleted,
+                "skipped": skipped,
+                "not_found": not_found,
+                "error": None
+            }
         )
 
-@router.post("/codes/bulk-update")
-async def bulk_update_codes(
-    update_data: BulkCodeUpdateRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_admin)
-):
-    """批量更新兑换码信息"""
-    try:
-        result = await redemption_service.bulk_update_codes(
-            codes=update_data.codes,
-            db_session=db,
-            has_warranty=update_data.has_warranty,
-            warranty_days=update_data.warranty_days
-        )
-        if not result["success"]:
-            return JSONResponse(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                content=result
-            )
-        return JSONResponse(content=result)
     except Exception as e:
+        logger.error(f"批量删除兑换码失败: {e}")
+        await db.rollback()
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": str(e)}

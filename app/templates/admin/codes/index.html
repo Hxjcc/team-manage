@@ -176,11 +176,6 @@
                                 class="btn btn-sm btn-icon btn-minimal btn-secondary" title="复制">
                                 <i data-lucide="copy" style="width: 14px; height: 14px;"></i>
                             </button>
-                            <button
-                                onclick="editCode('{{ code.code }}', {{ 'true' if code.has_warranty else 'false' }}, {{ code.warranty_days or 30 }})"
-                                class="btn btn-sm btn-icon btn-minimal btn-info" title="编辑">
-                                <i data-lucide="edit-3" style="width: 14px; height: 14px;"></i>
-                            </button>
                             {% if code.status == 'unused' %}
                             <button onclick="deleteCode('{{ code.code }}')"
                                 class="btn btn-sm btn-icon btn-minimal btn-danger" title="删除">
@@ -201,8 +196,8 @@
             已选择 <span id="selectedCount">0</span> 个兑换码
         </div>
         <div class="bulk-actions">
-            <button onclick="showBulkEditModal()" class="btn btn-primary">
-                <i data-lucide="edit-3" style="width: 16px; height: 16px;"></i> 批量修改质保
+            <button onclick="bulkDeleteSelected()" class="btn btn-danger">
+                <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i> 全部删除
             </button>
             <button onclick="deselectAll()" class="btn btn-secondary">取消全选</button>
         </div>
@@ -239,69 +234,6 @@
     {% endif %}
 </div>
 
-<!-- 批量编辑兑换码模态框 -->
-<div id="bulkEditCodeModal" class="modal-overlay">
-    <div class="modal">
-        <div class="modal-header">
-            <h3>批量修改质保</h3>
-            <button class="modal-close" onclick="hideModal('bulkEditCodeModal')">&times;</button>
-        </div>
-        <div class="modal-body">
-            <div class="alert alert-info" style="margin-bottom: 1rem;">
-                您正在批量修改 <strong id="bulk-selected-count-display">0</strong> 个兑换码的质保信息。
-            </div>
-            <form id="bulkEditCodeForm" onsubmit="handleBulkEditCode(event)">
-                <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-top: 1rem;">
-                        <input type="checkbox" id="bulk-edit-has-warranty" name="hasWarranty"
-                            style="width: auto; margin: 0;"
-                            onchange="toggleWarrantyDays(this, 'bulk-edit-warranty-days-group')">
-                        <span>质保兑换码 (可重复使用)</span>
-                    </label>
-                </div>
-                <div class="form-group" id="bulk-edit-warranty-days-group" style="display: none;">
-                    <label>质保时长 (天) *</label>
-                    <input type="number" id="bulk-edit-warranty-days" name="warrantyDays" class="form-control"
-                        value="30" min="1" max="3650">
-                </div>
-                <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">保存修改</button>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 编辑兑换码模态框 -->
-<div id="editCodeModal" class="modal-overlay">
-    <div class="modal">
-        <div class="modal-header">
-            <h3>编辑兑换码</h3>
-            <button class="modal-close" onclick="hideModal('editCodeModal')">&times;</button>
-        </div>
-        <div class="modal-body">
-            <form id="editCodeForm" onsubmit="handleEditCode(event)">
-                <input type="hidden" id="edit-code" name="code">
-                <div class="form-group">
-                    <label>兑换码</label>
-                    <input type="text" id="edit-code-display" class="form-control" readonly
-                        style="background: rgba(0,0,0,0.05);">
-                </div>
-                <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-top: 1rem;">
-                        <input type="checkbox" id="edit-has-warranty" name="hasWarranty" style="width: auto; margin: 0;"
-                            onchange="toggleWarrantyDays(this, 'edit-warranty-days-group')">
-                        <span>质保兑换码 (可重复使用)</span>
-                    </label>
-                </div>
-                <div class="form-group" id="edit-warranty-days-group" style="display: none;">
-                    <label>质保时长 (天) *</label>
-                    <input type="number" id="edit-warranty-days" name="warrantyDays" class="form-control" value="30"
-                        min="1" max="3650">
-                </div>
-                <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">保存修改</button>
-            </form>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block extra_css %}
@@ -381,43 +313,35 @@
         }
     }
 
-    // 显示批量编辑弹窗
-    function showBulkEditModal() {
-        const selected = document.querySelectorAll('.code-checkbox:checked');
-        document.getElementById('bulk-selected-count-display').innerText = selected.length;
-        showModal('bulkEditCodeModal');
-    }
-
-    // 处理批量编辑
-    async function handleBulkEditCode(event) {
-        event.preventDefault();
+    // 批量删除所选兑换码（仅未使用可删除）
+    async function bulkDeleteSelected() {
         const selected = document.querySelectorAll('.code-checkbox:checked');
         const codes = Array.from(selected).map(cb => cb.value);
+        if (codes.length === 0) return;
 
-        const has_warranty = document.getElementById('bulk-edit-has-warranty').checked;
-        const warranty_days = parseInt(document.getElementById('bulk-edit-warranty-days').value) || 30;
+        if (!confirm(`确定要删除选中的 ${codes.length} 个兑换码吗？（仅未使用可删除）`)) {
+            return;
+        }
 
         try {
-            const response = await fetch('/admin/codes/bulk-update', {
+            const response = await fetch('/admin/codes/bulk-delete', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    codes: codes,
-                    has_warranty: has_warranty,
-                    warranty_days: has_warranty ? warranty_days : null
-                })
+                body: JSON.stringify({ codes })
             });
 
             const result = await response.json();
-
             if (response.ok && result.success) {
-                showToast('批量更新成功', 'success');
-                hideModal('bulkEditCodeModal');
+                const deleted = result.deleted || 0;
+                const skipped = Array.isArray(result.skipped) ? result.skipped.length : 0;
+                const notFound = Array.isArray(result.not_found) ? result.not_found.length : 0;
+                const msg = `已删除 ${deleted} 个` + (skipped ? `，跳过 ${skipped} 个` : '') + (notFound ? `，未找到 ${notFound} 个` : '');
+                showToast(msg, 'success');
                 setTimeout(() => window.location.reload(), 1000);
             } else {
-                showToast(result.error || '批量更新失败', 'error');
+                showToast(result.error || '批量删除失败', 'error');
             }
         } catch (error) {
             console.error(error);
@@ -514,53 +438,5 @@
         }
     }
 
-    // 编辑兑换码
-    function editCode(code, hasWarranty, warrantyDays) {
-        document.getElementById('edit-code').value = code;
-        document.getElementById('edit-code-display').value = code;
-
-        const hasWarrantyCheckbox = document.getElementById('edit-has-warranty');
-        hasWarrantyCheckbox.checked = hasWarranty;
-
-        const warrantyDaysInput = document.getElementById('edit-warranty-days');
-        warrantyDaysInput.value = warrantyDays || 30;
-
-        // 触发显示/隐藏
-        toggleWarrantyDays(hasWarrantyCheckbox, 'edit-warranty-days-group');
-
-        showModal('editCodeModal');
-    }
-
-    async function handleEditCode(event) {
-        event.preventDefault();
-        const code = document.getElementById('edit-code').value;
-        const has_warranty = document.getElementById('edit-has-warranty').checked;
-        const warranty_days = parseInt(document.getElementById('edit-warranty-days').value) || 30;
-
-        try {
-            const response = await fetch(`/admin/codes/${encodeURIComponent(code)}/update`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    has_warranty,
-                    warranty_days: has_warranty ? warranty_days : null
-                })
-            });
-
-            const result = await response.json();
-
-            if (response.ok && result.success) {
-                showToast('更新成功', 'success');
-                hideModal('editCodeModal');
-                setTimeout(() => window.location.reload(), 1000);
-            } else {
-                showToast(result.error || '更新失败', 'error');
-            }
-        } catch (error) {
-            showToast('网络错误', 'error');
-        }
-    }
 </script>
 {% endblock %}

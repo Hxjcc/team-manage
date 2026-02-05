@@ -7,7 +7,7 @@ import secrets
 import string
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
-from sqlalchemy import select, update, delete, and_, or_, func
+from sqlalchemy import select, and_, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -903,16 +903,6 @@ class RedemptionService:
                 "error": f"删除兑换码失败: {str(e)}"
             }
 
-    async def update_code(
-        self,
-        code: str,
-        db_session: AsyncSession,
-        has_warranty: Optional[bool] = None,
-        warranty_days: Optional[int] = None
-    ) -> Dict[str, Any]:
-        """更新兑换码信息"""
-        return await self.bulk_update_codes([code], db_session, has_warranty, warranty_days)
-
     async def withdraw_record(
         self,
         record_id: int,
@@ -988,61 +978,6 @@ class RedemptionService:
             import traceback
             logger.error(traceback.format_exc())
             return {"success": False, "error": f"撤回失败: {str(e)}"}
-
-    async def bulk_update_codes(
-        self,
-        codes: List[str],
-        db_session: AsyncSession,
-        has_warranty: Optional[bool] = None,
-        warranty_days: Optional[int] = None
-    ) -> Dict[str, Any]:
-        """
-        批量更新兑换码信息
-
-        Args:
-            codes: 兑换码列表
-            db_session: 数据库会话
-            has_warranty: 是否为质保兑换码 (可选)
-            warranty_days: 质保天数 (可选)
-
-        Returns:
-            结果字典
-        """
-        try:
-            if not codes:
-                return {"success": True, "message": "没有需要更新的兑换码"}
-
-            # 构建更新语句
-            values = {}
-            if has_warranty is not None:
-                values[RedemptionCode.has_warranty] = has_warranty
-            if warranty_days is not None:
-                values[RedemptionCode.warranty_days] = warranty_days
-
-            if not values:
-                return {"success": True, "message": "没有提供更新内容"}
-
-            stmt = update(RedemptionCode).where(RedemptionCode.code.in_(codes)).values(values)
-            await db_session.execute(stmt)
-            await db_session.commit()
-
-            logger.info(f"成功批量更新 {len(codes)} 个兑换码")
-
-            return {
-                "success": True,
-                "message": f"成功批量更新 {len(codes)} 个兑换码",
-                "error": None
-            }
-
-        except Exception as e:
-            await db_session.rollback()
-            logger.error(f"批量更新兑换码失败: {e}")
-            return {
-                "success": False,
-                "message": None,
-                "error": f"批量更新失败: {str(e)}"
-            }
-
 
 # 创建全局兑换码服务实例
 redemption_service = RedemptionService()
