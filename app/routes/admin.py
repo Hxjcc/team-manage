@@ -638,8 +638,14 @@ async def codes_list_page(
                     code["display_remaining_days"] = remaining_days
                     code["display_price_yuan"] = format_price_yuan(price_cents)
 
-        # 质保剩余天数展示：从“首次使用/兑换成功”开始计时
-        warranty_codes = [c["code"] for c in codes if c.get("has_warranty") and c.get("status") != "unused"]
+        # 质保剩余天数展示：默认跟随绑定 Team 到期（Team 到期质保即结束）
+        # - 若该码已绑定/使用过 Team，则直接展示该 Team 的剩余天数
+        # - 若没有 Team 信息，再回退到“首次使用时间 + 质保天数”
+        warranty_codes = [
+            c["code"]
+            for c in codes
+            if c.get("has_warranty") and c.get("status") != "unused" and not c.get("display_team_id")
+        ]
         activation_map = {}
         if warranty_codes:
             stmt = (
@@ -655,8 +661,13 @@ async def codes_list_page(
             code["warranty_remaining_days"] = None
             if not code.get("has_warranty"):
                 continue
+
+            # 有绑定/使用 Team：质保随 Team 到期
+            if code.get("display_remaining_days") is not None:
+                code["warranty_remaining_days"] = int(code["display_remaining_days"])
+                continue
+
             if code.get("status") == "unused":
-                # 未使用/未激活：不倒计时，显示固定天数
                 continue
 
             activated_at = activation_map.get(code["code"])

@@ -217,7 +217,7 @@
                             <select name="teamId" id="single-team-select" class="form-control">
                                 <option value="">自动选择并绑定（按最早到期）</option>
                             </select>
-                            <small class="form-text">不选则系统自动选择并绑定一个 Team；价格按剩余天数计算（30天=15元）。</small>
+                            <small class="form-text">不选则系统自动选择并绑定一个 Team；价格/质保按剩余天数计算（30天=15元）。</small>
                             <div id="single-team-price-hint" class="team-bind-hint" style="display: none;"></div>
                         </div>
                         <div class="form-group">
@@ -226,11 +226,12 @@
                                     onchange="toggleWarrantyDays(this, 'single-warranty-days-group')">
                                 <span>质保兑换码 (可重复使用)</span>
                             </label>
-                            <small class="form-text">如果是质保兑换码，在质保期内，如果加入的 Team 被封号，可以重复使用</small>
+                            <small class="form-text">质保期默认随绑定 Team 到期（Team 到期质保即结束）；在质保期内，如果加入的 Team 被封号，可以重复使用</small>
                         </div>
                         <div class="form-group" id="single-warranty-days-group" style="display: none;">
-                            <label>质保时长 (天) *</label>
-                            <input type="number" name="warrantyDays" class="form-control" value="30" min="1" max="3650">
+                            <label>质保天数 (随 Team 自动计算)</label>
+                            <input type="number" name="warrantyDays" class="form-control" value="30" min="1" max="3650"
+                                readonly>
                         </div>
                         <button type="submit" class="btn btn-primary">生成兑换码</button>
                     </form>
@@ -260,7 +261,7 @@
                             <select name="teamId" id="batch-team-select" class="form-control">
                                 <option value="">自动分配并绑定（按最早到期优先）</option>
                             </select>
-                            <small class="form-text">不选则系统按到期时间自动分配并绑定到多个 Team；价格按剩余天数计算（30天=15元）。</small>
+                            <small class="form-text">不选则系统按到期时间自动分配并绑定到多个 Team；价格/质保按剩余天数计算（30天=15元）。</small>
                             <div id="batch-team-price-hint" class="team-bind-hint" style="display: none;"></div>
                         </div>
                         <div class="form-group">
@@ -269,11 +270,13 @@
                                     onchange="toggleWarrantyDays(this, 'batch-warranty-days-group')">
                                 <span>质保兑换码 (可重复使用)</span>
                             </label>
-                            <small class="form-text">如果是质保兑换码，在质保期内，如果加入的 Team 被封号，可以重复使用</small>
+                            <small class="form-text">质保期默认随绑定 Team 到期（Team 到期质保即结束）；在质保期内，如果加入的 Team 被封号，可以重复使用</small>
                         </div>
                         <div class="form-group" id="batch-warranty-days-group" style="display: none;">
-                            <label>质保时长 (天) *</label>
-                            <input type="number" name="warrantyDays" class="form-control" value="30" min="1" max="3650">
+                            <label>质保天数 (随 Team 自动计算)</label>
+                            <input type="number" name="warrantyDays" class="form-control" value="30" min="1" max="3650"
+                                readonly>
+                            <small class="form-text">批量自动分配时，每个兑换码会按各自绑定的 Team 剩余天数分别计算。</small>
                         </div>
                         <button type="submit" class="btn btn-primary">批量生成</button>
                     </form>

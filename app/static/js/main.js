@@ -329,6 +329,29 @@ function _updateTeamPriceHint(selectEl, hintEl, teams, options = {}) {
     _renderSingleTeamHint(hintEl, '已选择', 'status-active', team);
 }
 
+function _syncWarrantyDaysInput(selectEl, warrantyDaysInput, teams, options = {}) {
+    if (!selectEl || !warrantyDaysInput) return;
+    if (!teams || teams.length === 0) return;
+
+    const value = selectEl.value;
+    const mode = options.mode || 'single';
+
+    // 批量自动分配时，无法确定每个码的最终 Team；这里用“最早到期 Team”作为参考值
+    const team = value ? teams.find(t => String(t.id) === String(value)) : teams[0];
+    if (!team) return;
+
+    const remaining = team.remaining_days;
+    if (remaining === null || remaining === undefined) return;
+
+    // 只读输入框：始终写入计算值
+    warrantyDaysInput.value = String(remaining);
+    if (mode === 'batch' && !value) {
+        warrantyDaysInput.title = '批量自动分配：每个兑换码按各自绑定 Team 剩余天数计算';
+    } else {
+        warrantyDaysInput.title = '随绑定 Team 剩余天数自动计算';
+    }
+}
+
 async function initGenerateCodeModal() {
     try {
         const now = Date.now();
@@ -339,21 +362,31 @@ async function initGenerateCodeModal() {
         const batchSelect = document.getElementById('batch-team-select');
         const singleHint = document.getElementById('single-team-price-hint');
         const batchHint = document.getElementById('batch-team-price-hint');
+        const singleWarrantyDaysInput = document.querySelector('#single-warranty-days-group input[name="warrantyDays"]');
+        const batchWarrantyDaysInput = document.querySelector('#batch-warranty-days-group input[name="warrantyDays"]');
 
         _populateTeamSelect(singleSelect, teams);
         _populateTeamSelect(batchSelect, teams);
 
         if (singleSelect && !singleSelect.dataset.bound) {
-            singleSelect.addEventListener('change', () => _updateTeamPriceHint(singleSelect, singleHint, _codeGenTeamsCache, { mode: 'single' }));
+            singleSelect.addEventListener('change', () => {
+                _updateTeamPriceHint(singleSelect, singleHint, _codeGenTeamsCache, { mode: 'single' });
+                _syncWarrantyDaysInput(singleSelect, singleWarrantyDaysInput, _codeGenTeamsCache, { mode: 'single' });
+            });
             singleSelect.dataset.bound = '1';
         }
         if (batchSelect && !batchSelect.dataset.bound) {
-            batchSelect.addEventListener('change', () => _updateTeamPriceHint(batchSelect, batchHint, _codeGenTeamsCache, { mode: 'batch' }));
+            batchSelect.addEventListener('change', () => {
+                _updateTeamPriceHint(batchSelect, batchHint, _codeGenTeamsCache, { mode: 'batch' });
+                _syncWarrantyDaysInput(batchSelect, batchWarrantyDaysInput, _codeGenTeamsCache, { mode: 'batch' });
+            });
             batchSelect.dataset.bound = '1';
         }
 
         _updateTeamPriceHint(singleSelect, singleHint, teams, { mode: 'single' });
         _updateTeamPriceHint(batchSelect, batchHint, teams, { mode: 'batch' });
+        _syncWarrantyDaysInput(singleSelect, singleWarrantyDaysInput, teams, { mode: 'single' });
+        _syncWarrantyDaysInput(batchSelect, batchWarrantyDaysInput, teams, { mode: 'batch' });
     } catch (e) {
         // 错误在 fetchCodeGenTeams 内部已提示
     }

@@ -309,8 +309,20 @@ class RedeemFlowService:
                     if is_warranty_code:
                         redemption_code.status = "warranty_active"
                         if is_first_use:
-                            warranty_days = redemption_code.warranty_days or 30
-                            redemption_code.warranty_expires_at = get_now() + timedelta(days=warranty_days)
+                            # 质保到期时间跟随该 Team 到期时间（Team 到期质保即结束）
+                            if team.expires_at:
+                                redemption_code.warranty_expires_at = team.expires_at
+                                try:
+                                    from app.utils.pricing import calculate_remaining_days
+
+                                    remaining_days = calculate_remaining_days(team.expires_at)
+                                    if remaining_days is not None:
+                                        redemption_code.warranty_days = int(remaining_days)
+                                except Exception:
+                                    pass
+                            else:
+                                warranty_days = redemption_code.warranty_days or 30
+                                redemption_code.warranty_expires_at = get_now() + timedelta(days=warranty_days)
                     else:
                         redemption_code.status = "used"
                     

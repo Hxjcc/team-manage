@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models import RedemptionCode, RedemptionRecord, Team
+from app.utils.pricing import calculate_remaining_days
 from app.utils.time_utils import get_now
 
 logger = logging.getLogger(__name__)
@@ -156,6 +157,12 @@ class RedemptionService:
                     "message": None,
                     "error": "绑定的 Team 剩余席位不足"
                 }
+
+            # 质保默认随绑定 Team 到期：质保天数 = Team 剩余天数
+            if has_warranty and team.expires_at:
+                remaining_days = calculate_remaining_days(team.expires_at)
+                if remaining_days is not None:
+                    warranty_days = int(remaining_days)
 
             # 1. 生成或使用自定义兑换码
             if not code:
@@ -372,14 +379,28 @@ class RedemptionService:
                     break
 
             # 批量插入数据库
+            team_warranty_days_map: Dict[int, int] = {}
+            if has_warranty and allocations:
+                team_ids = list(allocations.keys())
+                stmt = select(Team).where(Team.id.in_(team_ids))
+                result = await db_session.execute(stmt)
+                teams_for_warranty = result.scalars().all()
+                for t in teams_for_warranty:
+                    if not t.expires_at:
+                        continue
+                    remaining_days = calculate_remaining_days(t.expires_at)
+                    if remaining_days is not None:
+                        team_warranty_days_map[int(t.id)] = int(remaining_days)
+
             for code_value in codes:
+                code_team_id = code_team_map.get(code_value) if code_team_map else bound_team_id
                 redemption_code = RedemptionCode(
                     code=code_value,
                     status="unused",
                     expires_at=expires_at,
-                    bound_team_id=code_team_map.get(code_value) if code_team_map else bound_team_id,
+                    bound_team_id=code_team_id,
                     has_warranty=has_warranty,
-                    warranty_days=warranty_days,
+                    warranty_days=team_warranty_days_map.get(int(code_team_id), warranty_days) if code_team_id else warranty_days,
                     warranty_expires_at=None
                 )
                 db_session.add(redemption_code)
