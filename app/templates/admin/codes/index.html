@@ -142,7 +142,9 @@
                         {% endif %}
                     </td>
                     <td>
-                        {% if code.display_price_yuan %}
+                        {% if code.status in ['used', 'warranty_active'] %}
+                        <span class="text-muted small">已使用</span>
+                        {% elif code.display_price_yuan %}
                         ￥{{ code.display_price_yuan }}
                         {% else %}
                         -
