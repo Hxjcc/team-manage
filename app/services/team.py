@@ -15,6 +15,7 @@ from app.services.encryption import encryption_service
 from app.utils.token_parser import TokenParser
 from app.utils.jwt_parser import JWTParser
 from app.utils.time_utils import get_now
+from app.utils.pricing import calculate_remaining_days, calculate_price_cents, format_price_yuan
 
 logger = logging.getLogger(__name__)
 
@@ -1429,13 +1430,18 @@ class TeamService:
             # 构建返回数据 (不包含敏感信息)
             team_list = []
             for team in teams:
+                remaining_days = calculate_remaining_days(team.expires_at)
+                price_cents = calculate_price_cents(remaining_days)
                 team_list.append({
                     "id": team.id,
                     "team_name": team.team_name,
                     "current_members": team.current_members,
                     "max_members": team.max_members,
                     "expires_at": team.expires_at.isoformat() if team.expires_at else None,
-                    "subscription_plan": team.subscription_plan
+                    "subscription_plan": team.subscription_plan,
+                    "remaining_days": remaining_days,
+                    "price_cents": price_cents,
+                    "price_yuan": format_price_yuan(price_cents)
                 })
 
             logger.info(f"获取可用 Team 列表成功: 共 {len(team_list)} 个")
@@ -1453,6 +1459,49 @@ class TeamService:
                 "teams": [],
                 "error": f"获取列表失败: {str(e)}"
             }
+
+    async def get_available_teams_for_admin(
+        self,
+        db_session: AsyncSession
+    ) -> Dict[str, Any]:
+        """
+        获取可用 Team 列表 (管理员用途，包含更多字段与价格信息)。
+
+        Returns:
+            结果字典,包含 success, teams, error
+        """
+        try:
+            stmt = select(Team).where(
+                Team.status == "active",
+                Team.current_members < Team.max_members
+            ).order_by(Team.expires_at.asc())
+
+            result = await db_session.execute(stmt)
+            teams = result.scalars().all()
+
+            team_list: List[Dict[str, Any]] = []
+            for team in teams:
+                remaining_days = calculate_remaining_days(team.expires_at)
+                price_cents = calculate_price_cents(remaining_days)
+                team_list.append({
+                    "id": team.id,
+                    "email": team.email,
+                    "account_id": team.account_id,
+                    "team_name": team.team_name,
+                    "current_members": team.current_members,
+                    "max_members": team.max_members,
+                    "expires_at": team.expires_at.isoformat() if team.expires_at else None,
+                    "subscription_plan": team.subscription_plan,
+                    "remaining_days": remaining_days,
+                    "price_cents": price_cents,
+                    "price_yuan": format_price_yuan(price_cents)
+                })
+
+            return {"success": True, "teams": team_list, "error": None}
+
+        except Exception as e:
+            logger.error(f"获取可用 Team(管理员) 列表失败: {e}")
+            return {"success": False, "teams": [], "error": str(e)}
 
     async def get_total_available_spots(
         self,
@@ -1639,6 +1688,8 @@ class TeamService:
             # 构建返回数据
             team_list = []
             for team in teams:
+                remaining_days = calculate_remaining_days(team.expires_at)
+                price_cents = calculate_price_cents(remaining_days)
                 team_list.append({
                     "id": team.id,
                     "email": team.email,
@@ -1651,7 +1702,10 @@ class TeamService:
                     "max_members": team.max_members,
                     "status": team.status,
                     "last_sync": team.last_sync.isoformat() if team.last_sync else None,
-                    "created_at": team.created_at.isoformat() if team.created_at else None
+                    "created_at": team.created_at.isoformat() if team.created_at else None,
+                    "remaining_days": remaining_days,
+                    "price_cents": price_cents,
+                    "price_yuan": format_price_yuan(price_cents)
                 })
 
             logger.info(f"获取所有 Team 列表成功: 第 {page} 页, 共 {len(team_list)} 个 / 总数 {total}")

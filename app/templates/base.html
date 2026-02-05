@@ -213,6 +213,14 @@
                                 max="3650">
                         </div>
                         <div class="form-group">
+                            <label>绑定 Team (可选)</label>
+                            <select name="teamId" id="single-team-select" class="form-control">
+                                <option value="">加载中...</option>
+                            </select>
+                            <small class="form-text">选择后，该兑换码将只能用于该 Team；价格按剩余天数计算（30天=15元）。</small>
+                            <small class="form-text" id="single-team-price-hint"></small>
+                        </div>
+                        <div class="form-group">
                             <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                                 <input type="checkbox" name="hasWarranty" value="true" style="width: auto; margin: 0;"
                                     onchange="toggleWarrantyDays(this, 'single-warranty-days-group')">
@@ -246,6 +254,14 @@
                             <label>有效期 (天数, 可选)</label>
                             <input type="number" name="expiresDays" class="form-control" placeholder="留空则永久有效" min="1"
                                 max="3650">
+                        </div>
+                        <div class="form-group">
+                            <label>绑定 Team (可选)</label>
+                            <select name="teamId" id="batch-team-select" class="form-control">
+                                <option value="">加载中...</option>
+                            </select>
+                            <small class="form-text">选择后，本次生成的兑换码将只能用于该 Team；价格按剩余天数计算（30天=15元）。</small>
+                            <small class="form-text" id="batch-team-price-hint"></small>
                         </div>
                         <div class="form-group">
                             <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">

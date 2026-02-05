@@ -55,6 +55,7 @@ class CodeGenerateRequest(BaseModel):
     code: Optional[str] = Field(None, description="自定义兑换码 (单个生成)")
     count: Optional[int] = Field(None, description="生成数量 (批量生成)")
     expires_days: Optional[int] = Field(None, description="有效期天数")
+    team_id: Optional[int] = Field(None, description="绑定 Team ID (可选)")
     has_warranty: bool = Field(False, description="是否为质保兑换码")
     warranty_days: int = Field(30, description="质保天数")
 
@@ -506,6 +507,33 @@ async def revoke_team_invite(
         )
 
 
+# ==================== Team 选项(用于生成兑换码绑定) ====================
+
+@router.get("/teams/options")
+async def get_team_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """
+    获取可用 Team 列表(用于生成兑换码时绑定 Team)。
+
+    Returns:
+        { success: bool, teams: [...], error: str | null }
+    """
+    result = await team_service.get_available_teams_for_admin(db)
+    if not result.get("success"):
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "success": False,
+                "teams": [],
+                "error": result.get("error") or "获取 Team 列表失败"
+            }
+        )
+
+    return JSONResponse(content=result)
+
+
 # ==================== 兑换码管理路由 ====================
 
 @router.get("/codes", response_class=HTMLResponse)
@@ -568,6 +596,33 @@ async def codes_list_page(
                 dt = datetime.fromisoformat(code["used_at"])
                 code["used_at"] = dt.strftime("%Y-%m-%d %H:%M")
 
+        # 绑定 Team 的价格信息 (用于按剩余时间展示)
+        from sqlalchemy import select
+        from app.models import Team
+        from app.utils.pricing import calculate_remaining_days, calculate_price_cents, format_price_yuan
+
+        bound_team_ids = {c.get("bound_team_id") for c in codes if c.get("bound_team_id")}
+        team_map = {}
+        if bound_team_ids:
+            stmt = select(Team).where(Team.id.in_(list(bound_team_ids)))
+            result = await db.execute(stmt)
+            teams = result.scalars().all()
+            team_map = {t.id: t for t in teams}
+
+        for code in codes:
+            code["bound_team_name"] = None
+            code["bound_remaining_days"] = None
+            code["bound_price_yuan"] = None
+            bound_id = code.get("bound_team_id")
+            if bound_id:
+                team = team_map.get(bound_id)
+                if team:
+                    remaining_days = calculate_remaining_days(team.expires_at)
+                    price_cents = calculate_price_cents(remaining_days)
+                    code["bound_team_name"] = team.team_name or f"Team {team.id}"
+                    code["bound_remaining_days"] = remaining_days
+                    code["bound_price_yuan"] = format_price_yuan(price_cents)
+
         return templates.TemplateResponse(
             "admin/codes/index.html",
             {
@@ -621,6 +676,7 @@ async def generate_codes(
             result = await redemption_service.generate_code_single(
                 db_session=db,
                 code=generate_data.code,
+                bound_team_id=generate_data.team_id,
                 expires_days=generate_data.expires_days,
                 has_warranty=generate_data.has_warranty,
                 warranty_days=generate_data.warranty_days
@@ -648,6 +704,7 @@ async def generate_codes(
             result = await redemption_service.generate_code_batch(
                 db_session=db,
                 count=generate_data.count,
+                bound_team_id=generate_data.team_id,
                 expires_days=generate_data.expires_days,
                 has_warranty=generate_data.has_warranty,
                 warranty_days=generate_data.warranty_days

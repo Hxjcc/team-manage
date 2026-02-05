@@ -71,6 +71,7 @@ class RedemptionCode(Base):
     status = Column(String(20), default="unused", comment="状态: unused/used/expired/warranty_active")
     created_at = Column(DateTime, default=get_now, comment="创建时间")
     expires_at = Column(DateTime, comment="过期时间")
+    bound_team_id = Column(Integer, comment="绑定的 Team ID (生成时选择，可选)")
     used_by_email = Column(String(255), comment="使用者邮箱")
     used_team_id = Column(Integer, ForeignKey("teams.id"), comment="使用的 Team ID")
     used_at = Column(DateTime, comment="使用时间")

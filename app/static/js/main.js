@@ -124,6 +124,11 @@ function showModal(modalId) {
     if (modal) {
         modal.classList.add('show');
         document.body.style.overflow = 'hidden'; // 防止背景滚动
+
+        // 特定模态框初始化逻辑
+        if (modalId === 'generateCodeModal') {
+            initGenerateCodeModal();
+        }
     }
 }
 
@@ -158,6 +163,118 @@ function switchModalTab(modalId, tabId) {
             panel.style.display = 'none';
         }
     });
+}
+
+// === 生成兑换码: Team 选项与价格展示 ===
+
+let _codeGenTeamsCache = null;
+let _codeGenTeamsCacheAt = 0;
+const CODE_GEN_TEAMS_CACHE_TTL_MS = 30 * 1000;
+
+function _formatTeamOptionLabel(team) {
+    const name = team.team_name || `Team ${team.id}`;
+    const email = team.email ? `(${team.email})` : '';
+    const members = `${team.current_members}/${team.max_members}`;
+    const remainingDaysText = (team.remaining_days === null || team.remaining_days === undefined) ? '未知' : `${team.remaining_days}天`;
+    const priceText = team.price_yuan ? `￥${team.price_yuan}` : '未知';
+    return `#${team.id} ${name} ${email} | ${members} | 剩余${remainingDaysText} | ${priceText}`;
+}
+
+function _populateTeamSelect(selectEl, teams) {
+    if (!selectEl) return;
+
+    const currentValue = selectEl.value;
+    selectEl.innerHTML = '';
+
+    const autoOpt = document.createElement('option');
+    autoOpt.value = '';
+    autoOpt.textContent = '自动分配（不绑定Team）';
+    selectEl.appendChild(autoOpt);
+
+    for (const team of teams) {
+        const opt = document.createElement('option');
+        opt.value = String(team.id);
+        opt.textContent = _formatTeamOptionLabel(team);
+        selectEl.appendChild(opt);
+    }
+
+    // 尝试恢复用户之前的选择
+    if (currentValue && teams.some(t => String(t.id) === String(currentValue))) {
+        selectEl.value = currentValue;
+    }
+}
+
+function _updateTeamPriceHint(selectEl, hintEl, teams) {
+    if (!selectEl || !hintEl) return;
+
+    const value = selectEl.value;
+    if (!value) {
+        hintEl.textContent = '';
+        return;
+    }
+
+    const team = teams.find(t => String(t.id) === String(value));
+    if (!team) {
+        hintEl.textContent = '';
+        return;
+    }
+
+    const name = team.team_name || `Team ${team.id}`;
+    const expiresText = team.expires_at ? formatDateTime(team.expires_at) : '-';
+    const remainingDaysText = (team.remaining_days === null || team.remaining_days === undefined) ? '未知' : `${team.remaining_days} 天`;
+    const priceText = team.price_yuan ? `￥${team.price_yuan}` : '未知';
+    hintEl.textContent = `当前选择：${name}（到期：${expiresText}，剩余：${remainingDaysText}，价格：${priceText}）`;
+}
+
+async function initGenerateCodeModal() {
+    try {
+        const now = Date.now();
+        const useCache = _codeGenTeamsCache && (now - _codeGenTeamsCacheAt) < CODE_GEN_TEAMS_CACHE_TTL_MS;
+        const teams = useCache ? _codeGenTeamsCache : await fetchCodeGenTeams();
+
+        const singleSelect = document.getElementById('single-team-select');
+        const batchSelect = document.getElementById('batch-team-select');
+        const singleHint = document.getElementById('single-team-price-hint');
+        const batchHint = document.getElementById('batch-team-price-hint');
+
+        _populateTeamSelect(singleSelect, teams);
+        _populateTeamSelect(batchSelect, teams);
+
+        if (singleSelect && !singleSelect.dataset.bound) {
+            singleSelect.addEventListener('change', () => _updateTeamPriceHint(singleSelect, singleHint, teams));
+            singleSelect.dataset.bound = '1';
+        }
+        if (batchSelect && !batchSelect.dataset.bound) {
+            batchSelect.addEventListener('change', () => _updateTeamPriceHint(batchSelect, batchHint, teams));
+            batchSelect.dataset.bound = '1';
+        }
+
+        _updateTeamPriceHint(singleSelect, singleHint, teams);
+        _updateTeamPriceHint(batchSelect, batchHint, teams);
+    } catch (e) {
+        // 错误在 fetchCodeGenTeams 内部已提示
+    }
+}
+
+async function fetchCodeGenTeams() {
+    try {
+        const response = await fetch('/admin/teams/options');
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || '加载 Team 列表失败');
+        }
+
+        _codeGenTeamsCache = Array.isArray(data.teams) ? data.teams : [];
+        _codeGenTeamsCacheAt = Date.now();
+        return _codeGenTeamsCache;
+    } catch (error) {
+        console.error('加载 Team 选项失败:', error);
+        showToast(error.message || '加载 Team 列表失败', 'error');
+        _codeGenTeamsCache = [];
+        _codeGenTeamsCacheAt = Date.now();
+        return _codeGenTeamsCache;
+    }
 }
 
 /**
@@ -344,6 +461,7 @@ async function generateSingle(event) {
     const form = event.target;
     const customCode = form.customCode.value.trim();
     const expiresDays = form.expiresDays.value;
+    const teamId = form.teamId ? form.teamId.value : '';
     const hasWarranty = form.hasWarranty.checked;
     const warrantyDays = form.warrantyDays ? form.warrantyDays.value : 30;
 
@@ -354,6 +472,7 @@ async function generateSingle(event) {
     };
     if (customCode) data.code = customCode;
     if (expiresDays) data.expires_days = parseInt(expiresDays);
+    if (teamId) data.team_id = parseInt(teamId);
 
     const result = await apiCall('/admin/codes/generate', {
         method: 'POST',
@@ -379,6 +498,7 @@ async function generateBatch(event) {
     const form = event.target;
     const count = parseInt(form.count.value);
     const expiresDays = form.expiresDays.value;
+    const teamId = form.teamId ? form.teamId.value : '';
     const hasWarranty = form.hasWarranty.checked;
     const warrantyDays = form.warrantyDays ? form.warrantyDays.value : 30;
 
@@ -394,6 +514,7 @@ async function generateBatch(event) {
         warranty_days: parseInt(warrantyDays || 30)
     };
     if (expiresDays) data.expires_days = parseInt(expiresDays);
+    if (teamId) data.team_id = parseInt(teamId);
 
     const result = await apiCall('/admin/codes/generate', {
         method: 'POST',

@@ -69,7 +69,11 @@ class RedeemFlowService:
                     "error": None
                 }
 
-            # 2. 获取可用 Team 列表
+            # 2. 如果兑换码绑定了 Team，仅返回该 Team（且必须可用）
+            stmt = select(RedemptionCode.bound_team_id).where(RedemptionCode.code == code)
+            result = await db_session.execute(stmt)
+            bound_team_id = result.scalar_one_or_none()
+
             teams_result = await self.team_service.get_available_teams(db_session)
 
             if not teams_result["success"]:
@@ -79,6 +83,26 @@ class RedeemFlowService:
                     "reason": None,
                     "teams": [],
                     "error": teams_result["error"]
+                }
+
+            if bound_team_id:
+                bound_teams = [t for t in teams_result.get("teams", []) if t.get("id") == bound_team_id]
+                if not bound_teams:
+                    return {
+                        "success": True,
+                        "valid": False,
+                        "reason": "兑换码绑定的 Team 当前不可用（已满或状态异常）",
+                        "teams": [],
+                        "error": None
+                    }
+
+                logger.info(f"验证兑换码成功: {code}, 绑定 Team: {bound_team_id}")
+                return {
+                    "success": True,
+                    "valid": True,
+                    "reason": None,
+                    "teams": bound_teams,
+                    "error": None
                 }
 
             logger.info(f"验证兑换码成功: {code}, 可用 Team 数量: {len(teams_result['teams'])}")
@@ -135,7 +159,7 @@ class RedeemFlowService:
             
             # 排除已加入的 Team
             if exclude_team_ids:
-                stmt = stmt.where(Team.id.not_in(exclude_team_ids))
+                stmt = stmt.where(Team.id.notin_(exclude_team_ids))
             
             stmt = stmt.order_by(Team.expires_at.asc()).limit(1)
 
@@ -184,6 +208,7 @@ class RedeemFlowService:
         last_error = "未知错误"
 
         for attempt in range(max_retries):
+            bound_team_id = None
             # 彻底确保会话处于干净状态，防止 "A transaction is already begun" 错误
             # SELECT 操作会隐式开启事务，导致后续 begin() 报错
             if db_session.in_transaction():
@@ -221,13 +246,19 @@ class RedeemFlowService:
                         return {"success": False, "error": "兑换码已被使用"}
 
                     # 2. 选择 Team
-                    if current_target_team_id is None:
-                        select_result = await self.select_team_auto(db_session, email=email)
-                        if not select_result["success"]:
-                            return {"success": False, "error": select_result["error"]}
-                        team_id_final = select_result["team_id"]
+                    bound_team_id = redemption_code.bound_team_id
+                    if bound_team_id is not None:
+                        if current_target_team_id is not None and current_target_team_id != bound_team_id:
+                            return {"success": False, "error": f"该兑换码已绑定 Team {bound_team_id}，请勿选择其他 Team"}
+                        team_id_final = bound_team_id
                     else:
-                        team_id_final = current_target_team_id
+                        if current_target_team_id is None:
+                            select_result = await self.select_team_auto(db_session, email=email)
+                            if not select_result["success"]:
+                                return {"success": False, "error": select_result["error"]}
+                            team_id_final = select_result["team_id"]
+                        else:
+                            team_id_final = current_target_team_id
 
                     # 3. 锁定并检查 Team
                     stmt = select(Team).where(Team.id == team_id_final).with_for_update()
@@ -354,7 +385,7 @@ class RedeemFlowService:
                             error_msg = "Team 账号已封禁/失效"
                     
                     last_error = error_msg
-                    if is_fatal and attempt < max_retries - 1:
+                    if is_fatal and attempt < max_retries - 1 and bound_team_id is None:
                         logger.info(f"致命错误，尝试更换 Team 重试...")
                         current_target_team_id = None
                         continue

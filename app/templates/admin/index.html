@@ -74,6 +74,8 @@
                     <th>成员数</th>
                     <th>订阅计划</th>
                     <th>到期时间</th>
+                    <th>剩余天数</th>
+                    <th>价格</th>
                     <th>状态</th>
                     <th>操作</th>
                 </tr>
@@ -94,6 +96,20 @@
                     <td>
                         {% if team.expires_at %}
                         {{ team.expires_at|format_datetime }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if team.remaining_days is not none %}
+                        {{ team.remaining_days }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if team.price_yuan is not none %}
+                        ￥{{ team.price_yuan }}
                         {% else %}
                         -
                         {% endif %}

@@ -42,6 +42,9 @@ class TeamInfo(BaseModel):
     max_members: int
     expires_at: Optional[str]
     subscription_plan: Optional[str]
+    remaining_days: Optional[int] = None
+    price_cents: Optional[int] = None
+    price_yuan: Optional[str] = None
 
 
 class VerifyCodeResponse(BaseModel):

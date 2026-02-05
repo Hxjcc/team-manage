@@ -88,6 +88,8 @@
                     <th>状态</th>
                     <th>创建时间</th>
                     <th>过期时间</th>
+                    <th>绑定 Team</th>
+                    <th>价格</th>
                     <th>使用者邮箱</th>
                     <th>使用时间</th>
                     <th>质保</th>
@@ -121,6 +123,28 @@
                     </td>
                     <td>{{ code.created_at }}</td>
                     <td>{{ code.expires_at if code.expires_at else '永久有效' }}</td>
+                    <td>
+                        {% if code.bound_team_id %}
+                        <div style="display: flex; flex-direction: column; gap: 2px;">
+                            <div>
+                                <span class="text-muted">#{{ code.bound_team_id }}</span>
+                                <span>{{ code.bound_team_name or '' }}</span>
+                            </div>
+                            {% if code.bound_remaining_days is not none %}
+                            <span class="text-muted small">剩余 {{ code.bound_remaining_days }} 天</span>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if code.bound_price_yuan %}
+                        ￥{{ code.bound_price_yuan }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
                     <td>{{ code.used_by_email if code.used_by_email else '-' }}</td>
                     <td>{{ code.used_at if code.used_at else '-' }}</td>
                     <td>

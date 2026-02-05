@@ -51,6 +51,7 @@ class RedemptionService:
         self,
         db_session: AsyncSession,
         code: Optional[str] = None,
+        bound_team_id: Optional[int] = None,
         expires_days: Optional[int] = None,
         has_warranty: bool = False,
         warranty_days: int = 30
@@ -68,6 +69,26 @@ class RedemptionService:
             结果字典,包含 success, code, message, error
         """
         try:
+            # 0. 如果绑定了 Team，先校验 Team 可用性
+            if bound_team_id is not None:
+                stmt = select(Team).where(Team.id == bound_team_id)
+                result = await db_session.execute(stmt)
+                team = result.scalar_one_or_none()
+                if not team:
+                    return {
+                        "success": False,
+                        "code": None,
+                        "message": None,
+                        "error": f"Team ID {bound_team_id} 不存在"
+                    }
+                if team.status != "active" or team.current_members >= team.max_members:
+                    return {
+                        "success": False,
+                        "code": None,
+                        "message": None,
+                        "error": "绑定的 Team 不可用（已满或状态异常）"
+                    }
+
             # 1. 生成或使用自定义兑换码
             if not code:
                 # 生成随机码,确保唯一性
@@ -113,6 +134,7 @@ class RedemptionService:
                 code=code,
                 status="unused",
                 expires_at=expires_at,
+                bound_team_id=bound_team_id,
                 has_warranty=has_warranty,
                 warranty_days=warranty_days
             )
@@ -125,6 +147,7 @@ class RedemptionService:
             return {
                 "success": True,
                 "code": code,
+                "bound_team_id": bound_team_id,
                 "message": f"兑换码生成成功: {code}",
                 "error": None
             }
@@ -143,6 +166,7 @@ class RedemptionService:
         self,
         db_session: AsyncSession,
         count: int,
+        bound_team_id: Optional[int] = None,
         expires_days: Optional[int] = None,
         has_warranty: bool = False,
         warranty_days: int = 30
@@ -168,6 +192,38 @@ class RedemptionService:
                     "message": None,
                     "error": "生成数量必须在 1-1000 之间"
                 }
+
+            # 0. 如果绑定了 Team，先校验 Team 可用性
+            if bound_team_id is not None:
+                stmt = select(Team).where(Team.id == bound_team_id)
+                result = await db_session.execute(stmt)
+                team = result.scalar_one_or_none()
+                if not team:
+                    return {
+                        "success": False,
+                        "codes": [],
+                        "total": 0,
+                        "message": None,
+                        "error": f"Team ID {bound_team_id} 不存在"
+                    }
+                if team.status != "active" or team.current_members >= team.max_members:
+                    return {
+                        "success": False,
+                        "codes": [],
+                        "total": 0,
+                        "message": None,
+                        "error": "绑定的 Team 不可用（已满或状态异常）"
+                    }
+
+                remaining_seats = int(team.max_members or 0) - int(team.current_members or 0)
+                if remaining_seats < int(count):
+                    return {
+                        "success": False,
+                        "codes": [],
+                        "total": 0,
+                        "message": None,
+                        "error": f"绑定的 Team 剩余席位不足（剩余 {remaining_seats}，需要 {count}）"
+                    }
 
             # 计算过期时间
             expires_at = None
@@ -201,6 +257,7 @@ class RedemptionService:
                     code=code,
                     status="unused",
                     expires_at=expires_at,
+                    bound_team_id=bound_team_id,
                     has_warranty=has_warranty,
                     warranty_days=warranty_days
                 )
@@ -214,6 +271,7 @@ class RedemptionService:
                 "success": True,
                 "codes": codes,
                 "total": len(codes),
+                "bound_team_id": bound_team_id,
                 "message": f"成功生成 {len(codes)} 个兑换码",
                 "error": None
             }
@@ -454,6 +512,7 @@ class RedemptionService:
                     "status": code.status,
                     "created_at": code.created_at.isoformat() if code.created_at else None,
                     "expires_at": code.expires_at.isoformat() if code.expires_at else None,
+                    "bound_team_id": code.bound_team_id,
                     "used_by_email": code.used_by_email,
                     "used_team_id": code.used_team_id,
                     "used_at": code.used_at.isoformat() if code.used_at else None,
@@ -515,6 +574,7 @@ class RedemptionService:
                 "status": redemption_code.status,
                 "created_at": redemption_code.created_at.isoformat() if redemption_code.created_at else None,
                 "expires_at": redemption_code.expires_at.isoformat() if redemption_code.expires_at else None,
+                "bound_team_id": redemption_code.bound_team_id,
                 "used_by_email": redemption_code.used_by_email,
                 "used_team_id": redemption_code.used_team_id,
                 "used_at": redemption_code.used_at.isoformat() if redemption_code.used_at else None
@@ -563,7 +623,8 @@ class RedemptionService:
                     "code": code.code,
                     "status": code.status,
                     "created_at": code.created_at.isoformat() if code.created_at else None,
-                    "expires_at": code.expires_at.isoformat() if code.expires_at else None
+                    "expires_at": code.expires_at.isoformat() if code.expires_at else None,
+                    "bound_team_id": code.bound_team_id
                 })
 
             return {
