@@ -91,11 +91,19 @@ function confirmAction(message) {
     return confirm(message);
 }
 
-// 页面加载完成后执行
-document.addEventListener('DOMContentLoaded', function () {
-    // 检查认证状态
+// 页面加载完成后执行（兼容 Turbo 无刷新导航）
+function _runAuthCheckForView() {
+    const key = `${window.location.pathname}${window.location.search}`;
+    if (window.__lastAuthCheckKey === key) return;
+    window.__lastAuthCheckKey = key;
     checkAuthStatus();
-});
+}
+
+if (!window.__authCheckHooksInstalled) {
+    window.__authCheckHooksInstalled = true;
+    document.addEventListener('DOMContentLoaded', _runAuthCheckForView);
+    document.addEventListener('turbo:load', _runAuthCheckForView);
+}
 
 // 检查认证状态
 async function checkAuthStatus() {

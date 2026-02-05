@@ -65,6 +65,12 @@ body {
     min-height: 100vh;
 }
 
+/* Turbo（无刷新导航）顶部进度条 */
+.turbo-progress-bar {
+    height: 2px;
+    background: var(--primary);
+}
+
 /* Animations */
 @keyframes fadeInUp {
     from {

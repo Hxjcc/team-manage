@@ -134,19 +134,21 @@
                     <td>
                         <div class="action-buttons">
                             <button class="btn btn-sm btn-icon btn-minimal btn-info btn-view-members"
-                                data-id="{{ team.id }}" data-email="{{ team.email }}" title="查看成员">
+                                data-id="{{ team.id }}" data-email="{{ team.email }}" title="查看成员"
+                                onclick="viewMembers({{ team.id }}, '{{ team.email|escape_js }}')">
                                 <i data-lucide="users" style="width: 16px; height: 16px;"></i>
                             </button>
                             <button class="btn btn-sm btn-icon btn-minimal btn-primary btn-edit-team"
-                                data-id="{{ team.id }}" title="编辑">
+                                data-id="{{ team.id }}" title="编辑" onclick="editTeam({{ team.id }})">
                                 <i data-lucide="edit-3" style="width: 16px; height: 16px;"></i>
                             </button>
                             <button class="btn btn-sm btn-icon btn-minimal btn-secondary btn-refresh-team"
-                                data-id="{{ team.id }}" title="刷新">
+                                data-id="{{ team.id }}" title="刷新" onclick="refreshTeam({{ team.id }})">
                                 <i data-lucide="refresh-cw" style="width: 16px; height: 16px;"></i>
                             </button>
                             <button class="btn btn-sm btn-icon btn-minimal btn-danger btn-delete-team"
-                                data-id="{{ team.id }}" data-email="{{ team.email }}" title="删除">
+                                data-id="{{ team.id }}" data-email="{{ team.email }}" title="删除"
+                                onclick="deleteTeam({{ team.id }}, '{{ team.email|escape_js }}')">
                                 <i data-lucide="trash-2" style="width: 16px; height: 16px;"></i>
                             </button>
                         </div>
@@ -252,42 +254,6 @@
 
 {% block extra_js %}
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        // 绑定查看成员按钮
-        document.querySelectorAll('.btn-view-members').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const id = btn.getAttribute('data-id');
-                const email = btn.getAttribute('data-email');
-                viewMembers(id, email);
-            });
-        });
-
-        // 绑定刷新按钮
-        document.querySelectorAll('.btn-refresh-team').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const id = btn.getAttribute('data-id');
-                refreshTeam(id);
-            });
-        });
-
-        // 绑定删除按钮
-        document.querySelectorAll('.btn-delete-team').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const id = btn.getAttribute('data-id');
-                const email = btn.getAttribute('data-email');
-                deleteTeam(id, email);
-            });
-        });
-
-        // 绑定编辑按钮
-        document.querySelectorAll('.btn-edit-team').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const id = btn.getAttribute('data-id');
-                editTeam(id);
-            });
-        });
-    });
-
     async function refreshTeam(teamId) {
         if (!confirm('确定要刷新此 Team 的信息吗?')) {
             return;
