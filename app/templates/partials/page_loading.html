@@ -9,9 +9,18 @@
     width: 100%;
     background: var(--primary, #22c55e);
     transform-origin: 0 50%;
+    transform: scaleX(0.08);
+    opacity: 1;
+    transition: transform 260ms ease, opacity 260ms ease;
     animation: pageProgress 1.2s ease-out infinite;
     z-index: 9999;
     pointer-events: none;
+  }
+
+  html.__page-loading.__page-loading-done::before {
+    animation: none;
+    transform: scaleX(1);
+    opacity: 0;
   }
 
   @keyframes pageProgress {
@@ -42,12 +51,25 @@
 <script>
   (function () {
     var root = document.documentElement;
-    root.classList.add('__page-loading');
+    var doneTimer = null;
 
-    function stop() {
-      root.classList.remove('__page-loading');
+    function start() {
+      root.classList.remove('__page-loading-done');
+      root.classList.add('__page-loading');
     }
 
+    function stop() {
+      if (!root.classList.contains('__page-loading')) return;
+      root.classList.add('__page-loading-done');
+
+      if (doneTimer) window.clearTimeout(doneTimer);
+      doneTimer = window.setTimeout(function () {
+        root.classList.remove('__page-loading');
+        root.classList.remove('__page-loading-done');
+      }, 280);
+    }
+
+    start();
     window.addEventListener('load', stop);
     window.addEventListener('pageshow', stop);
     window.setTimeout(stop, 12000);
@@ -71,11 +93,11 @@
         // ignore
       }
 
-      root.classList.add('__page-loading');
+      start();
     });
 
     document.addEventListener('submit', function () {
-      root.classList.add('__page-loading');
+      start();
     });
   })();
 </script>
