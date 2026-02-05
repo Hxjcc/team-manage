@@ -124,14 +124,17 @@
                     <td>{{ code.created_at }}</td>
                     <td>{{ code.expires_at if code.expires_at else '永久有效' }}</td>
                     <td>
-                        {% if code.bound_team_id %}
+                        {% if code.display_team_id %}
                         <div style="display: flex; flex-direction: column; gap: 2px;">
                             <div>
-                                <span class="text-muted">#{{ code.bound_team_id }}</span>
-                                <span>{{ code.bound_team_name or '' }}</span>
+                                <span class="text-muted">#{{ code.display_team_id }}</span>
+                                <span>{{ code.display_team_name or '' }}</span>
+                                {% if code.display_team_source %}
+                                <span class="text-muted small">({{ code.display_team_source }})</span>
+                                {% endif %}
                             </div>
-                            {% if code.bound_remaining_days is not none %}
-                            <span class="text-muted small">剩余 {{ code.bound_remaining_days }} 天</span>
+                            {% if code.display_remaining_days is not none %}
+                            <span class="text-muted small">剩余 {{ code.display_remaining_days }} 天</span>
                             {% endif %}
                         </div>
                         {% else %}
@@ -139,8 +142,8 @@
                         {% endif %}
                     </td>
                     <td>
-                        {% if code.bound_price_yuan %}
-                        ￥{{ code.bound_price_yuan }}
+                        {% if code.display_price_yuan %}
+                        ￥{{ code.display_price_yuan }}
                         {% else %}
                         -
                         {% endif %}

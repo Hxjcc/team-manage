@@ -5,11 +5,11 @@ Team 管理服务
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from sqlalchemy import select, update, delete, func
+from sqlalchemy import select, update, delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Team, TeamAccount
+from app.models import Team, TeamAccount, RedemptionCode
 from app.services.chatgpt import ChatGPTService
 from app.services.encryption import encryption_service
 from app.utils.token_parser import TokenParser
@@ -1471,10 +1471,25 @@ class TeamService:
             结果字典,包含 success, teams, error
         """
         try:
-            stmt = select(Team).where(
-                Team.status == "active",
-                Team.current_members < Team.max_members
-            ).order_by(Team.expires_at.asc())
+            # 1) 统计每个 Team 已绑定的未使用兑换码数量（视为席位预占）
+            reserved_stmt = (
+                select(RedemptionCode.bound_team_id, func.count(RedemptionCode.id))
+                .where(
+                    RedemptionCode.bound_team_id.isnot(None),
+                    RedemptionCode.status == "unused",
+                    or_(RedemptionCode.expires_at.is_(None), RedemptionCode.expires_at > get_now()),
+                )
+                .group_by(RedemptionCode.bound_team_id)
+            )
+            reserved_result = await db_session.execute(reserved_stmt)
+            reserved_map = {int(team_id): int(count) for team_id, count in reserved_result.all() if team_id is not None}
+
+            # 2) 获取可用 Team（按到期时间排序）
+            stmt = (
+                select(Team)
+                .where(Team.status == "active", Team.current_members < Team.max_members)
+                .order_by(Team.expires_at.asc())
+            )
 
             result = await db_session.execute(stmt)
             teams = result.scalars().all()
@@ -1483,6 +1498,10 @@ class TeamService:
             for team in teams:
                 remaining_days = calculate_remaining_days(team.expires_at)
                 price_cents = calculate_price_cents(remaining_days)
+                reserved_codes = reserved_map.get(team.id, 0)
+                available_seats = max(int(team.max_members or 0) - int(team.current_members or 0) - int(reserved_codes), 0)
+                if available_seats <= 0:
+                    continue
                 team_list.append({
                     "id": team.id,
                     "email": team.email,
@@ -1494,7 +1513,9 @@ class TeamService:
                     "subscription_plan": team.subscription_plan,
                     "remaining_days": remaining_days,
                     "price_cents": price_cents,
-                    "price_yuan": format_price_yuan(price_cents)
+                    "price_yuan": format_price_yuan(price_cents),
+                    "reserved_codes": reserved_codes,
+                    "available_seats": available_seats
                 })
 
             return {"success": True, "teams": team_list, "error": None}

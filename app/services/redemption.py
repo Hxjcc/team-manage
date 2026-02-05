@@ -47,6 +47,53 @@ class RedemptionService:
 
         return code
 
+    async def _get_reserved_unused_codes_by_team(self, db_session: AsyncSession) -> Dict[int, int]:
+        """
+        获取各 Team 绑定的未使用兑换码数量，用于席位预占。
+
+        Returns:
+            {team_id: reserved_count}
+        """
+        try:
+            stmt = (
+                select(RedemptionCode.bound_team_id, func.count(RedemptionCode.id))
+                .where(
+                    RedemptionCode.bound_team_id.isnot(None),
+                    RedemptionCode.status == "unused",
+                    or_(RedemptionCode.expires_at.is_(None), RedemptionCode.expires_at > get_now()),
+                )
+                .group_by(RedemptionCode.bound_team_id)
+            )
+            result = await db_session.execute(stmt)
+            return {int(team_id): int(count) for team_id, count in result.all() if team_id is not None}
+        except Exception:
+            return {}
+
+    def _calculate_team_available_seats(self, team: Team, reserved_count: int) -> int:
+        max_members = int(team.max_members or 0)
+        current_members = int(team.current_members or 0)
+        reserved = int(reserved_count or 0)
+        return max(max_members - current_members - reserved, 0)
+
+    async def _select_team_for_single_code(self, db_session: AsyncSession) -> Optional[int]:
+        """
+        为单个兑换码自动选择一个可用 Team(按到期时间升序)，并考虑未使用绑定码的预占。
+        """
+        reserved_map = await self._get_reserved_unused_codes_by_team(db_session)
+        stmt = (
+            select(Team)
+            .where(Team.status == "active", Team.current_members < Team.max_members)
+            .order_by(Team.expires_at.asc())
+        )
+        result = await db_session.execute(stmt)
+        teams = result.scalars().all()
+
+        for team in teams:
+            available_seats = self._calculate_team_available_seats(team, reserved_map.get(team.id, 0))
+            if available_seats > 0:
+                return int(team.id)
+        return None
+
     async def generate_code_single(
         self,
         db_session: AsyncSession,
@@ -69,25 +116,46 @@ class RedemptionService:
             结果字典,包含 success, code, message, error
         """
         try:
-            # 0. 如果绑定了 Team，先校验 Team 可用性
-            if bound_team_id is not None:
-                stmt = select(Team).where(Team.id == bound_team_id)
-                result = await db_session.execute(stmt)
-                team = result.scalar_one_or_none()
-                if not team:
+            # 0. 绑定 Team 逻辑：不传则自动选择并绑定
+            reserved_map = await self._get_reserved_unused_codes_by_team(db_session)
+            if bound_team_id is None:
+                bound_team_id = await self._select_team_for_single_code(db_session)
+                if bound_team_id is None:
                     return {
                         "success": False,
                         "code": None,
                         "message": None,
-                        "error": f"Team ID {bound_team_id} 不存在"
+                        "error": "没有可用的 Team（席位不足）"
                     }
-                if team.status != "active" or team.current_members >= team.max_members:
-                    return {
-                        "success": False,
-                        "code": None,
-                        "message": None,
-                        "error": "绑定的 Team 不可用（已满或状态异常）"
-                    }
+
+            # 校验 Team 可用性 + 预占席位检查
+            stmt = select(Team).where(Team.id == bound_team_id)
+            result = await db_session.execute(stmt)
+            team = result.scalar_one_or_none()
+            if not team:
+                return {
+                    "success": False,
+                    "code": None,
+                    "message": None,
+                    "error": f"Team ID {bound_team_id} 不存在"
+                }
+
+            if team.status != "active" or team.current_members >= team.max_members:
+                return {
+                    "success": False,
+                    "code": None,
+                    "message": None,
+                    "error": "绑定的 Team 不可用（已满或状态异常）"
+                }
+
+            available_seats = self._calculate_team_available_seats(team, reserved_map.get(team.id, 0))
+            if available_seats < 1:
+                return {
+                    "success": False,
+                    "code": None,
+                    "message": None,
+                    "error": "绑定的 Team 剩余席位不足"
+                }
 
             # 1. 生成或使用自定义兑换码
             if not code:
@@ -193,7 +261,10 @@ class RedemptionService:
                     "error": "生成数量必须在 1-1000 之间"
                 }
 
-            # 0. 如果绑定了 Team，先校验 Team 可用性
+            reserved_map = await self._get_reserved_unused_codes_by_team(db_session)
+            allocations: Dict[int, int] = {}
+
+            # 0. 绑定 Team 逻辑：不传则按到期时间自动分配并绑定到多个 Team
             if bound_team_id is not None:
                 stmt = select(Team).where(Team.id == bound_team_id)
                 result = await db_session.execute(stmt)
@@ -206,6 +277,7 @@ class RedemptionService:
                         "message": None,
                         "error": f"Team ID {bound_team_id} 不存在"
                     }
+
                 if team.status != "active" or team.current_members >= team.max_members:
                     return {
                         "success": False,
@@ -215,15 +287,51 @@ class RedemptionService:
                         "error": "绑定的 Team 不可用（已满或状态异常）"
                     }
 
-                remaining_seats = int(team.max_members or 0) - int(team.current_members or 0)
-                if remaining_seats < int(count):
+                available_seats = self._calculate_team_available_seats(team, reserved_map.get(team.id, 0))
+                if available_seats < int(count):
                     return {
                         "success": False,
                         "codes": [],
                         "total": 0,
                         "message": None,
-                        "error": f"绑定的 Team 剩余席位不足（剩余 {remaining_seats}，需要 {count}）"
+                        "error": f"绑定的 Team 剩余席位不足（可用 {available_seats}，需要 {count}）"
                     }
+
+                allocations[int(team.id)] = int(count)
+            else:
+                # 自动分配：按 Team 到期时间升序分配
+                stmt = (
+                    select(Team)
+                    .where(Team.status == "active", Team.current_members < Team.max_members)
+                    .order_by(Team.expires_at.asc())
+                )
+                result = await db_session.execute(stmt)
+                teams = result.scalars().all()
+
+                remaining = int(count)
+                total_available = 0
+                team_available_list = []
+                for team in teams:
+                    available_seats = self._calculate_team_available_seats(team, reserved_map.get(team.id, 0))
+                    if available_seats > 0:
+                        team_available_list.append((team, available_seats))
+                        total_available += available_seats
+
+                if total_available < remaining:
+                    return {
+                        "success": False,
+                        "codes": [],
+                        "total": 0,
+                        "message": None,
+                        "error": f"可用 Team 席位不足（可用 {total_available}，需要 {count}）"
+                    }
+
+                for team, available_seats in team_available_list:
+                    if remaining <= 0:
+                        break
+                    use_count = min(int(available_seats), remaining)
+                    allocations[int(team.id)] = int(use_count)
+                    remaining -= int(use_count)
 
             # 计算过期时间
             expires_at = None
@@ -231,33 +339,44 @@ class RedemptionService:
                 expires_at = get_now() + timedelta(days=expires_days)
 
             # 批量生成兑换码
-            codes = []
-            for i in range(count):
-                # 生成唯一兑换码
-                max_attempts = 10
-                for _ in range(max_attempts):
-                    code = self._generate_random_code()
+            codes: List[str] = []
+            code_team_map: Dict[str, int] = {}
 
-                    # 检查是否已存在 (包括本次批量生成的)
-                    if code not in codes:
-                        stmt = select(RedemptionCode).where(RedemptionCode.code == code)
+            total_to_generate = int(count)
+            created = 0
+            for team_id, team_count in allocations.items():
+                for i in range(int(team_count)):
+                    max_attempts = 10
+                    for _ in range(max_attempts):
+                        new_code = self._generate_random_code()
+
+                        if new_code in codes:
+                            continue
+
+                        stmt = select(RedemptionCode).where(RedemptionCode.code == new_code)
                         result = await db_session.execute(stmt)
                         existing = result.scalar_one_or_none()
-
                         if not existing:
-                            codes.append(code)
+                            codes.append(new_code)
+                            code_team_map[new_code] = int(team_id)
                             break
-                else:
-                    logger.warning(f"生成第 {i+1} 个兑换码失败")
-                    continue
+                    else:
+                        logger.warning(f"生成第 {created + 1} 个兑换码失败")
+                        continue
+
+                    created += 1
+                    if created >= total_to_generate:
+                        break
+                if created >= total_to_generate:
+                    break
 
             # 批量插入数据库
-            for code in codes:
+            for code_value in codes:
                 redemption_code = RedemptionCode(
-                    code=code,
+                    code=code_value,
                     status="unused",
                     expires_at=expires_at,
-                    bound_team_id=bound_team_id,
+                    bound_team_id=code_team_map.get(code_value) if code_team_map else bound_team_id,
                     has_warranty=has_warranty,
                     warranty_days=warranty_days
                 )
@@ -271,7 +390,7 @@ class RedemptionService:
                 "success": True,
                 "codes": codes,
                 "total": len(codes),
-                "bound_team_id": bound_team_id,
+                "allocations": allocations,
                 "message": f"成功生成 {len(codes)} 个兑换码",
                 "error": None
             }

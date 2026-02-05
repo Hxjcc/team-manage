@@ -69,10 +69,14 @@ class RedeemFlowService:
                     "error": None
                 }
 
-            # 2. 如果兑换码绑定了 Team，仅返回该 Team（且必须可用）
-            stmt = select(RedemptionCode.bound_team_id).where(RedemptionCode.code == code)
+            # 2. 如果兑换码绑定了 Team，默认仅返回该 Team（质保码复用时除外）
+            stmt = select(RedemptionCode).where(RedemptionCode.code == code)
             result = await db_session.execute(stmt)
-            bound_team_id = result.scalar_one_or_none()
+            redemption_code_obj = result.scalar_one_or_none()
+
+            bound_team_id = redemption_code_obj.bound_team_id if redemption_code_obj else None
+            is_warranty_code = redemption_code_obj.has_warranty if redemption_code_obj else False
+            is_first_use = (redemption_code_obj.status == "unused") if redemption_code_obj else True
 
             teams_result = await self.team_service.get_available_teams(db_session)
 
@@ -85,7 +89,7 @@ class RedeemFlowService:
                     "error": teams_result["error"]
                 }
 
-            if bound_team_id:
+            if bound_team_id and (not is_warranty_code or is_first_use):
                 bound_teams = [t for t in teams_result.get("teams", []) if t.get("id") == bound_team_id]
                 if not bound_teams:
                     return {
@@ -246,7 +250,13 @@ class RedeemFlowService:
                         return {"success": False, "error": "兑换码已被使用"}
 
                     # 2. 选择 Team
+                    is_warranty_code = redemption_code.has_warranty
+                    is_first_use = redemption_code.status == "unused"
+
                     bound_team_id = redemption_code.bound_team_id
+                    # 质保码在复用场景允许更换 Team，因此不强制绑定
+                    if is_warranty_code and not is_first_use:
+                        bound_team_id = None
                     if bound_team_id is not None:
                         if current_target_team_id is not None and current_target_team_id != bound_team_id:
                             return {"success": False, "error": f"该兑换码已绑定 Team {bound_team_id}，请勿选择其他 Team"}
@@ -284,9 +294,6 @@ class RedeemFlowService:
                         return {"success": False, "error": f"Team 状态异常: {team.status}"}
 
                     # 特殊处理质保码逻辑
-                    is_warranty_code = redemption_code.has_warranty
-                    is_first_use = redemption_code.status == "unused"
-                    
                     if not is_first_use:
                         # 如果不是首次使用，检查是否为质保码且可重复使用
                         if is_warranty_code:

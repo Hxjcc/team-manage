@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}GPT Team 管理系统{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}?v={{ static_version }}">
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     {% block extra_css %}{% endblock %}
@@ -215,9 +215,9 @@
                         <div class="form-group">
                             <label>绑定 Team (可选)</label>
                             <select name="teamId" id="single-team-select" class="form-control">
-                                <option value="">加载中...</option>
+                                <option value="">自动选择并绑定（按最早到期）</option>
                             </select>
-                            <small class="form-text">选择后，该兑换码将只能用于该 Team；价格按剩余天数计算（30天=15元）。</small>
+                            <small class="form-text">不选则系统自动选择并绑定一个 Team；价格按剩余天数计算（30天=15元）。</small>
                             <small class="form-text" id="single-team-price-hint"></small>
                         </div>
                         <div class="form-group">
@@ -258,9 +258,9 @@
                         <div class="form-group">
                             <label>绑定 Team (可选)</label>
                             <select name="teamId" id="batch-team-select" class="form-control">
-                                <option value="">加载中...</option>
+                                <option value="">自动分配并绑定（按最早到期优先）</option>
                             </select>
-                            <small class="form-text">选择后，本次生成的兑换码将只能用于该 Team；价格按剩余天数计算（30天=15元）。</small>
+                            <small class="form-text">不选则系统按到期时间自动分配并绑定到多个 Team；价格按剩余天数计算（30天=15元）。</small>
                             <small class="form-text" id="batch-team-price-hint"></small>
                         </div>
                         <div class="form-group">
@@ -361,7 +361,7 @@
     </div>
     <div id="toast" class="toast"></div>
 
-    <script src="{{ url_for('static', path='/js/main.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/main.js') }}?v={{ static_version }}"></script>
     <script>
         lucide.createIcons();
     </script>

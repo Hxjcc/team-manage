@@ -175,9 +175,11 @@ function _formatTeamOptionLabel(team) {
     const name = team.team_name || `Team ${team.id}`;
     const email = team.email ? `(${team.email})` : '';
     const members = `${team.current_members}/${team.max_members}`;
+    const availableSeats = (team.available_seats === null || team.available_seats === undefined) ? null : team.available_seats;
     const remainingDaysText = (team.remaining_days === null || team.remaining_days === undefined) ? '未知' : `${team.remaining_days}天`;
     const priceText = team.price_yuan ? `￥${team.price_yuan}` : '未知';
-    return `#${team.id} ${name} ${email} | ${members} | 剩余${remainingDaysText} | ${priceText}`;
+    const seatsText = availableSeats === null ? '' : ` | 可用${availableSeats}`;
+    return `#${team.id} ${name} ${email} | ${members}${seatsText} | 剩余${remainingDaysText} | ${priceText}`;
 }
 
 function _populateTeamSelect(selectEl, teams) {
@@ -188,7 +190,7 @@ function _populateTeamSelect(selectEl, teams) {
 
     const autoOpt = document.createElement('option');
     autoOpt.value = '';
-    autoOpt.textContent = '自动分配（不绑定Team）';
+    autoOpt.textContent = '自动选择并绑定（按最早到期）';
     selectEl.appendChild(autoOpt);
 
     for (const team of teams) {
@@ -208,12 +210,20 @@ function _updateTeamPriceHint(selectEl, hintEl, teams) {
     if (!selectEl || !hintEl) return;
 
     const value = selectEl.value;
-    if (!value) {
-        hintEl.textContent = '';
-        return;
-    }
+    let team = null;
+    let prefix = '';
 
-    const team = teams.find(t => String(t.id) === String(value));
+    if (!value) {
+        if (!teams || teams.length === 0) {
+            hintEl.textContent = '暂无可用 Team';
+            return;
+        }
+        team = teams[0];
+        prefix = '自动绑定：';
+    } else {
+        team = teams.find(t => String(t.id) === String(value));
+        prefix = '当前选择：';
+    }
     if (!team) {
         hintEl.textContent = '';
         return;
@@ -223,7 +233,8 @@ function _updateTeamPriceHint(selectEl, hintEl, teams) {
     const expiresText = team.expires_at ? formatDateTime(team.expires_at) : '-';
     const remainingDaysText = (team.remaining_days === null || team.remaining_days === undefined) ? '未知' : `${team.remaining_days} 天`;
     const priceText = team.price_yuan ? `￥${team.price_yuan}` : '未知';
-    hintEl.textContent = `当前选择：${name}（到期：${expiresText}，剩余：${remainingDaysText}，价格：${priceText}）`;
+    const availableSeatsText = (team.available_seats === null || team.available_seats === undefined) ? '' : `，可用席位：${team.available_seats}`;
+    hintEl.textContent = `${prefix}${name}（到期：${expiresText}，剩余：${remainingDaysText}，价格：${priceText}${availableSeatsText}）`;
 }
 
 async function initGenerateCodeModal() {
@@ -258,8 +269,14 @@ async function initGenerateCodeModal() {
 
 async function fetchCodeGenTeams() {
     try {
-        const response = await fetch('/admin/teams/options');
-        const data = await response.json();
+        const response = await fetch('/admin/teams/options', { credentials: 'same-origin' });
+        const text = await response.text();
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch (e) {
+            throw new Error('加载 Team 列表失败（服务器返回非 JSON）');
+        }
 
         if (!response.ok || !data.success) {
             throw new Error(data.error || '加载 Team 列表失败');

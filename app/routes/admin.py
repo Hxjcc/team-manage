@@ -601,27 +601,40 @@ async def codes_list_page(
         from app.models import Team
         from app.utils.pricing import calculate_remaining_days, calculate_price_cents, format_price_yuan
 
-        bound_team_ids = {c.get("bound_team_id") for c in codes if c.get("bound_team_id")}
+        team_ids = set()
+        for c in codes:
+            team_id = c.get("bound_team_id") or c.get("used_team_id")
+            if team_id:
+                team_ids.add(team_id)
         team_map = {}
-        if bound_team_ids:
-            stmt = select(Team).where(Team.id.in_(list(bound_team_ids)))
+        if team_ids:
+            stmt = select(Team).where(Team.id.in_(list(team_ids)))
             result = await db.execute(stmt)
             teams = result.scalars().all()
             team_map = {t.id: t for t in teams}
 
         for code in codes:
-            code["bound_team_name"] = None
-            code["bound_remaining_days"] = None
-            code["bound_price_yuan"] = None
-            bound_id = code.get("bound_team_id")
-            if bound_id:
-                team = team_map.get(bound_id)
+            code["display_team_id"] = code.get("bound_team_id") or code.get("used_team_id")
+            if code.get("bound_team_id"):
+                code["display_team_source"] = "绑定"
+            elif code.get("used_team_id"):
+                code["display_team_source"] = "使用"
+            else:
+                code["display_team_source"] = None
+
+            code["display_team_name"] = None
+            code["display_remaining_days"] = None
+            code["display_price_yuan"] = None
+
+            team_id = code.get("display_team_id")
+            if team_id:
+                team = team_map.get(team_id)
                 if team:
                     remaining_days = calculate_remaining_days(team.expires_at)
                     price_cents = calculate_price_cents(remaining_days)
-                    code["bound_team_name"] = team.team_name or f"Team {team.id}"
-                    code["bound_remaining_days"] = remaining_days
-                    code["bound_price_yuan"] = format_price_yuan(price_cents)
+                    code["display_team_name"] = team.team_name or f"Team {team.id}"
+                    code["display_remaining_days"] = remaining_days
+                    code["display_price_yuan"] = format_price_yuan(price_cents)
 
         return templates.TemplateResponse(
             "admin/codes/index.html",
