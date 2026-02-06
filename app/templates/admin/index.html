@@ -44,13 +44,13 @@
     <div class="section-header">
         <h3>Team 列表</h3>
         <div class="header-group">
-            <form action="/admin" method="get" class="search-form">
+            <form action="/admin/" method="get" class="search-form" data-turbo="false">
                 <div class="input-group-clean">
                     <i data-lucide="search" style="width: 14px; height: 14px;"></i>
                     <input type="text" name="search" value="{{ search or '' }}" placeholder="搜索邮箱/Account ID..."
                         style="width: 200px;">
                     {% if search %}
-                    <a href="/admin" title="清除搜索">
+                    <a href="/admin/" title="清除搜索">
                         <i data-lucide="x-circle" style="width: 14px; height: 14px;"></i>
                     </a>
                     {% endif %}

@@ -8,9 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, and_, select
 from pydantic import BaseModel, Field
 
 from app.database import get_db
+from app.models import Team, RedemptionCode
 from app.dependencies.auth import require_admin
 from app.services.team import TeamService
 from app.services.redemption import RedemptionService
@@ -99,19 +101,23 @@ async def admin_dashboard(
         # 获取 Team 列表 (分页)
         teams_result = await team_service.get_all_teams(db, page=page, per_page=per_page, search=search)
         
-        # 获取统计信息 (可以使用专用统计方法优化)
-        all_teams_result = await team_service.get_all_teams(db, page=1, per_page=10000)
-        all_teams = all_teams_result.get("teams", [])
-        
-        all_codes_result = await redemption_service.get_all_codes(db, page=1, per_page=10000)
-        all_codes = all_codes_result.get("codes", [])
+        # 使用高效的 COUNT 查询获取统计信息
+        total_teams = (await db.execute(select(func.count(Team.id)))).scalar() or 0
+        available_teams = (await db.execute(
+            select(func.count(Team.id)).where(
+                and_(Team.status == "active", Team.current_members < Team.max_members)
+            )
+        )).scalar() or 0
+        total_codes = (await db.execute(select(func.count(RedemptionCode.id)))).scalar() or 0
+        used_codes = (await db.execute(
+            select(func.count(RedemptionCode.id)).where(RedemptionCode.status == "used")
+        )).scalar() or 0
 
-        # 计算统计数据
         stats = {
-            "total_teams": len(all_teams),
-            "available_teams": len([t for t in all_teams if t.get("status") == "active" and t.get("current_members", 0) < t.get("max_members", 6)]),
-            "total_codes": len(all_codes),
-            "used_codes": len([c for c in all_codes if c.get("status") == "used"])
+            "total_teams": total_teams,
+            "available_teams": available_teams,
+            "total_codes": total_codes,
+            "used_codes": used_codes
         }
 
         return templates.TemplateResponse(
