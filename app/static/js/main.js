@@ -18,6 +18,36 @@ function hideToast() {
     toast.classList.remove('expanded');
 }
 
+async function copyToastText(text) {
+    const value = text === null || text === undefined ? '' : String(text);
+
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(value);
+            return true;
+        }
+    } catch (_) { }
+
+    // Fallback for non-HTTPS contexts / older browsers
+    try {
+        const textarea = document.createElement('textarea');
+        textarea.value = value;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.top = '-9999px';
+        textarea.style.left = '-9999px';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        return ok;
+    } catch (_) {
+        return false;
+    }
+}
+
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
     if (!toast) return;
@@ -34,6 +64,14 @@ function showToast(message, type = 'info') {
 
     const messageText = message === null || message === undefined ? '' : String(message);
     const isLong = messageText.length > 160 || messageText.includes('\n');
+
+    const baseDuration =
+        type === 'error' ? 15000 :
+        type === 'warning' ? 12000 :
+        3000;
+    const longDuration = Math.min(20000, Math.max(baseDuration, 16000));
+    const expandedDuration = 20000;
+    const defaultDuration = isLong ? longDuration : baseDuration;
 
     toast.innerHTML = '';
     toast.className = `toast ${type} show`;
@@ -60,20 +98,40 @@ function showToast(message, type = 'info') {
 
     toast.appendChild(iconEl);
     toast.appendChild(msgEl);
+
+    // 仅长错误/警告提示提供“一键复制”
+    if (isLong && (type === 'error' || type === 'warning')) {
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'toast-close toast-copy';
+        copyBtn.setAttribute('aria-label', '复制错误信息');
+        copyBtn.innerHTML = '<i data-lucide="copy"></i>';
+        copyBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const ok = await copyToastText(messageText);
+            hideToast();
+            showToast(ok ? '错误信息已复制' : '复制失败，请手动复制', ok ? 'success' : 'error');
+        });
+        toast.appendChild(copyBtn);
+    }
+
     toast.appendChild(closeBtn);
 
-    // 长提示：点击展开/收起；展开时不自动消失
+    // 长提示：点击展开/收起；展开后延长停留时间
     toast.onclick = () => {
         if (!toast.classList.contains('toast-long')) return;
 
+        if (__toastHideTimer) {
+            clearTimeout(__toastHideTimer);
+            __toastHideTimer = null;
+        }
+
         toast.classList.toggle('expanded');
         if (toast.classList.contains('expanded')) {
-            if (__toastHideTimer) {
-                clearTimeout(__toastHideTimer);
-                __toastHideTimer = null;
-            }
+            __toastHideTimer = setTimeout(hideToast, expandedDuration);
         } else {
-            __toastHideTimer = setTimeout(hideToast, 2500);
+            __toastHideTimer = setTimeout(hideToast, defaultDuration);
         }
     };
 
@@ -81,8 +139,7 @@ function showToast(message, type = 'info') {
         lucide.createIcons();
     }
 
-    const duration = type === 'error' ? 10000 : type === 'warning' ? 8000 : 3000;
-    __toastHideTimer = setTimeout(hideToast, duration);
+    __toastHideTimer = setTimeout(hideToast, defaultDuration);
 }
 
 // 日期格式化函数
