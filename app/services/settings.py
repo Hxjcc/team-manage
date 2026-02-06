@@ -181,6 +181,45 @@ class SettingsService:
 
         return await self.update_settings(session, settings)
 
+    async def get_flaresolverr_config(self, session: AsyncSession) -> Dict[str, str]:
+        """
+        获取 FlareSolverr 配置
+
+        Returns:
+            FlareSolverr 配置字典
+        """
+        enabled = await self.get_setting(session, "flaresolverr_enabled", "false")
+        url = await self.get_setting(session, "flaresolverr_url", "")
+
+        return {
+            "enabled": enabled.lower() == "true",
+            "url": url
+        }
+
+    async def update_flaresolverr_config(
+        self,
+        session: AsyncSession,
+        enabled: bool,
+        url: str = ""
+    ) -> bool:
+        """
+        更新 FlareSolverr 配置
+
+        Args:
+            session: 数据库会话
+            enabled: 是否启用 FlareSolverr
+            url: FlareSolverr 服务地址 (如 http://localhost:8191)
+
+        Returns:
+            是否更新成功
+        """
+        settings = {
+            "flaresolverr_enabled": str(enabled).lower(),
+            "flaresolverr_url": url
+        }
+
+        return await self.update_settings(session, settings)
+
     async def get_log_level(self, session: AsyncSession) -> str:
         """
         获取日志级别

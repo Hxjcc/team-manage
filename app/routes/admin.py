@@ -1238,6 +1238,7 @@ async def settings_page(
 
         # 获取当前配置
         proxy_config = await settings_service.get_proxy_config(db)
+        flaresolverr_config = await settings_service.get_flaresolverr_config(db)
         log_level = await settings_service.get_log_level(db)
 
         return templates.TemplateResponse(
@@ -1248,6 +1249,8 @@ async def settings_page(
                 "active_page": "settings",
                 "proxy_enabled": proxy_config["enabled"],
                 "proxy": proxy_config["proxy"],
+                "flaresolverr_enabled": flaresolverr_config["enabled"],
+                "flaresolverr_url": flaresolverr_config["url"],
                 "log_level": log_level
             }
         )
@@ -1269,6 +1272,12 @@ class ProxyConfigRequest(BaseModel):
 class LogLevelRequest(BaseModel):
     """日志级别请求"""
     level: str = Field(..., description="日志级别")
+
+
+class FlareSolverrConfigRequest(BaseModel):
+    """FlareSolverr 配置请求"""
+    enabled: bool = Field(..., description="是否启用 FlareSolverr")
+    url: str = Field("", description="FlareSolverr 服务地址")
 
 
 @router.post("/settings/proxy")
@@ -1367,6 +1376,67 @@ async def update_log_level(
 
     except Exception as e:
         logger.error(f"更新日志级别失败: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"success": False, "error": f"更新失败: {str(e)}"}
+        )
+
+
+@router.post("/settings/flaresolverr")
+async def update_flaresolverr_config(
+    config_data: FlareSolverrConfigRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(require_admin)
+):
+    """
+    更新 FlareSolverr 配置
+
+    Args:
+        config_data: FlareSolverr 配置数据
+        db: 数据库会话
+        current_user: 当前用户（需要登录）
+
+    Returns:
+        更新结果
+    """
+    try:
+        from app.services.settings import settings_service
+
+        logger.info(f"管理员更新 FlareSolverr 配置: enabled={config_data.enabled}, url={config_data.url}")
+
+        # 验证 URL 格式
+        if config_data.enabled and config_data.url:
+            url = config_data.url.strip()
+            if not (url.startswith("http://") or url.startswith("https://")):
+                return JSONResponse(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    content={
+                        "success": False,
+                        "error": "FlareSolverr 地址格式错误,应为 http://host:port"
+                    }
+                )
+
+        # 更新配置
+        success = await settings_service.update_flaresolverr_config(
+            db,
+            config_data.enabled,
+            config_data.url.strip() if config_data.url else ""
+        )
+
+        if success:
+            # 清理 ChatGPT 服务的会话和 CF cookies 缓存
+            from app.services.chatgpt import chatgpt_service
+            await chatgpt_service.clear_session()
+
+            return JSONResponse(content={"success": True, "message": "FlareSolverr 配置已保存"})
+        else:
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content={"success": False, "error": "保存失败"}
+            )
+
+    except Exception as e:
+        logger.error(f"更新 FlareSolverr 配置失败: {e}")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"success": False, "error": f"更新失败: {str(e)}"}

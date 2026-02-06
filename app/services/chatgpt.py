@@ -4,6 +4,7 @@ ChatGPT API 服务
 """
 import asyncio
 import logging
+import time
 from typing import Optional, Dict, Any, List
 from curl_cffi.requests import AsyncSession
 from app.services.settings import settings_service
@@ -21,10 +22,16 @@ class ChatGPTService:
     MAX_RETRIES = 3
     RETRY_DELAYS = [1, 2, 4]  # 指数退避: 1s, 2s, 4s
 
+    # FlareSolverr CF cookies 缓存时间 (30 分钟)
+    CF_COOKIE_TTL = 1800
+
     def __init__(self):
         """初始化 ChatGPT API 服务"""
         self.session: Optional[AsyncSession] = None
         self.proxy: Optional[str] = None
+        self._cf_cookies: Optional[Dict[str, str]] = None
+        self._cf_user_agent: Optional[str] = None
+        self._cf_cookies_time: float = 0
 
     @staticmethod
     def _looks_like_html(text: Optional[str]) -> bool:
@@ -91,6 +98,96 @@ class ChatGPTService:
             return proxy_config["proxy"]
         return None
 
+    async def _fetch_cf_cookies(self, db_session: DBAsyncSession) -> bool:
+        """
+        通过 FlareSolverr 获取 Cloudflare 验证 cookies
+
+        Args:
+            db_session: 数据库会话
+
+        Returns:
+            是否成功获取 cookies
+        """
+        config = await settings_service.get_flaresolverr_config(db_session)
+        if not config["enabled"] or not config["url"]:
+            return False
+
+        flaresolverr_url = config["url"].rstrip("/") + "/v1"
+        logger.info(f"通过 FlareSolverr 获取 CF cookies: {flaresolverr_url}")
+
+        try:
+            async with AsyncSession(timeout=120) as fs_session:
+                response = await fs_session.post(
+                    flaresolverr_url,
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "cmd": "request.get",
+                        "url": "https://chatgpt.com",
+                        "maxTimeout": 60000
+                    }
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("status") == "ok":
+                        solution = data.get("solution", {})
+                        cookies_list = solution.get("cookies", [])
+                        user_agent = solution.get("userAgent", "")
+
+                        self._cf_cookies = {c["name"]: c["value"] for c in cookies_list}
+                        self._cf_user_agent = user_agent or None
+                        self._cf_cookies_time = time.time()
+
+                        logger.info(f"FlareSolverr 成功: 获取 {len(self._cf_cookies)} 个 cookies")
+                        return True
+                    else:
+                        logger.warning(f"FlareSolverr 失败: {data.get('message', '未知错误')}")
+                else:
+                    logger.warning(f"FlareSolverr HTTP 错误: {response.status_code}")
+
+        except Exception as e:
+            logger.error(f"FlareSolverr 异常: {e}")
+
+        return False
+
+    def _cf_cookies_valid(self) -> bool:
+        """检查 CF cookies 缓存是否仍然有效"""
+        return bool(self._cf_cookies) and (time.time() - self._cf_cookies_time) < self.CF_COOKIE_TTL
+
+    async def _ensure_cf_cookies(self, db_session: DBAsyncSession):
+        """确保有有效的 CF cookies (如果 FlareSolverr 已配置)"""
+        if not self._cf_cookies_valid():
+            await self._fetch_cf_cookies(db_session)
+
+    async def _try_cf_recovery(self, db_session: DBAsyncSession) -> bool:
+        """
+        CF 验证失败后,尝试通过 FlareSolverr 重新获取 cookies 并重建会话
+
+        Returns:
+            是否恢复成功
+        """
+        logger.info("检测到 Cloudflare 验证,尝试通过 FlareSolverr 恢复...")
+
+        # 清除缓存
+        self._cf_cookies = None
+        self._cf_user_agent = None
+        self._cf_cookies_time = 0
+
+        # 重新获取 cookies
+        success = await self._fetch_cf_cookies(db_session)
+        if success:
+            # 重建 session
+            if self.session:
+                try:
+                    await self.session.close()
+                except Exception:
+                    pass
+                self.session = None
+            self.session = await self._create_session(db_session)
+            return True
+
+        return False
+
     async def _create_session(self, db_session: DBAsyncSession) -> AsyncSession:
         """
         创建 HTTP 会话
@@ -104,12 +201,21 @@ class ChatGPTService:
         # 获取代理配置
         proxy = await self._get_proxy_config(db_session)
 
+        # 如果 FlareSolverr 已配置,确保有 CF cookies
+        await self._ensure_cf_cookies(db_session)
+
         # 创建会话 (使用 chrome 浏览器指纹)
         session = AsyncSession(
             impersonate="chrome",
             proxies={"http": proxy, "https": proxy} if proxy else None,
             timeout=30
         )
+
+        # 应用 CF cookies 到会话
+        if self._cf_cookies:
+            for name, value in self._cf_cookies.items():
+                session.cookies.set(name, value, domain="chatgpt.com")
+            logger.info(f"已应用 {len(self._cf_cookies)} 个 CF cookies 到会话")
 
         logger.info(f"创建 HTTP 会话,代理: {proxy if proxy else '未使用'}")
         return session
@@ -139,18 +245,25 @@ class ChatGPTService:
         if not self.session:
             self.session = await self._create_session(db_session)
 
+        cf_retried = False  # 标记是否已通过 FlareSolverr 重试过
+
         # 重试循环
         for attempt in range(self.MAX_RETRIES):
             try:
                 logger.info(f"发送请求: {method} {url} (尝试 {attempt + 1}/{self.MAX_RETRIES})")
 
+                # 如果有 FlareSolverr 的 User-Agent,覆盖请求头
+                request_headers = dict(headers)
+                if self._cf_user_agent:
+                    request_headers["User-Agent"] = self._cf_user_agent
+
                 # 发送请求
                 if method == "GET":
-                    response = await self.session.get(url, headers=headers)
+                    response = await self.session.get(url, headers=request_headers)
                 elif method == "POST":
-                    response = await self.session.post(url, headers=headers, json=json_data)
+                    response = await self.session.post(url, headers=request_headers, json=json_data)
                 elif method == "DELETE":
-                    response = await self.session.delete(url, headers=headers, json=json_data)
+                    response = await self.session.delete(url, headers=request_headers, json=json_data)
                 else:
                     raise ValueError(f"不支持的 HTTP 方法: {method}")
 
@@ -194,6 +307,14 @@ class ChatGPTService:
                             text_body = response.text
 
                     simplified = self._simplify_error_text(text_body)
+
+                    # CF 验证检测: 尝试通过 FlareSolverr 恢复
+                    if simplified.get("code") == "cloudflare_challenge" and not cf_retried and db_session:
+                        recovery_ok = await self._try_cf_recovery(db_session)
+                        if recovery_ok:
+                            cf_retried = True
+                            continue
+
                     logger.warning(f"响应内容非 JSON 或解析失败: {simplified['message']}")
                     return {
                         "success": False,
@@ -209,7 +330,7 @@ class ChatGPTService:
                     try:
                         error_data = response.json()
                         error_msg = error_data.get("detail", response.text)
-                        
+
                         # 检测特定错误码
                         if isinstance(error_data, dict):
                             # 有些错误可能在 error 字段里
@@ -225,6 +346,13 @@ class ChatGPTService:
                     error_msg = simplified["message"]
                     error_code = error_code or simplified.get("code")
 
+                    # 4xx 也可能是 CF 挑战 (403)
+                    if simplified.get("code") == "cloudflare_challenge" and not cf_retried and db_session:
+                        recovery_ok = await self._try_cf_recovery(db_session)
+                        if recovery_ok:
+                            cf_retried = True
+                            continue
+
                     logger.warning(f"客户端错误 {status_code}: {error_msg} (code: {error_code})")
 
                     return {
@@ -237,13 +365,20 @@ class ChatGPTService:
 
                 # 5xx 服务器错误 (需要重试)
                 if status_code >= 500:
-                    # Cloudflare 验证页有时会以 5xx 返回，直接给出更友好的错误提示
+                    # Cloudflare 验证页有时会以 5xx 返回
                     try:
                         body_text = response.text
                     except Exception:
                         body_text = ""
 
                     if self._looks_like_html(body_text) and self._is_cloudflare_challenge(body_text):
+                        # 尝试通过 FlareSolverr 恢复
+                        if not cf_retried and db_session:
+                            recovery_ok = await self._try_cf_recovery(db_session)
+                            if recovery_ok:
+                                cf_retried = True
+                                continue
+
                         simplified = self._simplify_error_text(body_text)
                         logger.warning(f"服务器错误 {status_code}: {simplified['message']}")
                         return {
@@ -631,18 +766,18 @@ class ChatGPTService:
         
         headers = {
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": self._cf_user_agent or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
-        
+
         cookies = {
             "__Secure-next-auth.session-token": session_token
         }
-        
+
         logger.info("使用 session_token 刷新 access_token")
-        
+
         if not self.session:
             self.session = await self._create_session(db_session)
-            
+
         try:
             response = await self.session.get(url, headers=headers, cookies=cookies)
             status_code = response.status_code
@@ -758,7 +893,10 @@ class ChatGPTService:
             logger.info("HTTP 会话已关闭")
 
     async def clear_session(self):
-        """清理当前会话 (别名,用于语义化调用)"""
+        """清理当前会话和 CF cookies 缓存"""
+        self._cf_cookies = None
+        self._cf_user_agent = None
+        self._cf_cookies_time = 0
         await self.close()
 
 
