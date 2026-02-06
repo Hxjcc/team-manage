@@ -28,7 +28,6 @@ class ChatGPTService:
     def __init__(self):
         """初始化 ChatGPT API 服务"""
         self.session: Optional[AsyncSession] = None
-        self.proxy: Optional[str] = None
         self._cf_cookies: Optional[Dict[str, str]] = None
         self._cf_user_agent: Optional[str] = None
         self._cf_cookies_time: float = 0
@@ -66,7 +65,7 @@ class ChatGPTService:
         # Cloudflare 验证页（常见于 chatgpt.com 后端接口）
         if cls._looks_like_html(text) and cls._is_cloudflare_challenge(text):
             return {
-                "message": "请求被 Cloudflare 拦截（需要浏览器验证）。请更换网络/IP 或在系统设置中配置代理后重试。",
+                "message": "请求被 Cloudflare 拦截（需要浏览器验证）。请在系统设置中配置 FlareSolverr 后重试。",
                 "code": "cloudflare_challenge",
             }
 
@@ -82,21 +81,6 @@ class ChatGPTService:
         if len(trimmed) > 2000:
             trimmed = trimmed[:2000] + "...(已截断)"
         return {"message": trimmed, "code": None}
-
-    async def _get_proxy_config(self, db_session: DBAsyncSession) -> Optional[str]:
-        """
-        获取代理配置
-
-        Args:
-            db_session: 数据库会话
-
-        Returns:
-            代理地址,如果未启用则返回 None
-        """
-        proxy_config = await settings_service.get_proxy_config(db_session)
-        if proxy_config["enabled"] and proxy_config["proxy"]:
-            return proxy_config["proxy"]
-        return None
 
     async def _fetch_cf_cookies(self, db_session: DBAsyncSession) -> bool:
         """
@@ -198,16 +182,12 @@ class ChatGPTService:
         Returns:
             curl_cffi AsyncSession 实例
         """
-        # 获取代理配置
-        proxy = await self._get_proxy_config(db_session)
-
         # 如果 FlareSolverr 已配置,确保有 CF cookies
         await self._ensure_cf_cookies(db_session)
 
         # 创建会话 (使用 chrome 浏览器指纹)
         session = AsyncSession(
             impersonate="chrome",
-            proxies={"http": proxy, "https": proxy} if proxy else None,
             timeout=30
         )
 
@@ -217,7 +197,7 @@ class ChatGPTService:
                 session.cookies.set(name, value, domain="chatgpt.com")
             logger.info(f"已应用 {len(self._cf_cookies)} 个 CF cookies 到会话")
 
-        logger.info(f"创建 HTTP 会话,代理: {proxy if proxy else '未使用'}")
+        logger.info("创建 HTTP 会话")
         return session
 
     async def _make_request(

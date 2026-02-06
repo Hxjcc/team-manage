@@ -7,33 +7,6 @@
     <h2>系统设置</h2>
 </div>
 
-<!-- 代理配置 -->
-<div class="content-section">
-    <div class="section-header">
-        <h3>代理配置</h3>
-    </div>
-
-    <form id="proxyForm" class="settings-form">
-        <div class="form-group">
-            <label class="checkbox-label">
-                <input type="checkbox" id="proxyEnabled" name="enabled" {% if proxy_enabled %}checked{% endif %}>
-                <span>启用代理</span>
-            </label>
-            <p class="form-help">启用后,所有ChatGPT API请求将通过代理服务器</p>
-        </div>
-
-        <div class="form-group">
-            <label for="proxyUrl">代理地址</label>
-            <input type="text" id="proxyUrl" name="proxy" value="{{ proxy or '' }}"
-                placeholder="http://127.0.0.1:7890, socks5://127.0.0.1:1080 或 socks5h://127.0.0.1:1080"
-                class="form-control">
-            <p class="form-help">支持HTTP、SOCKS5和SOCKS5H (远程DNS解析) 代理</p>
-        </div>
-
-        <button type="submit" class="btn btn-primary">保存代理配置</button>
-    </form>
-</div>
-
 <!-- FlareSolverr 配置 -->
 <div class="content-section">
     <div class="section-header">
@@ -135,40 +108,6 @@
 
 {% block extra_js %}
 <script>
-    // 代理配置表单
-    document.getElementById('proxyForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const enabled = document.getElementById('proxyEnabled').checked;
-        const proxy = document.getElementById('proxyUrl').value.trim();
-
-        // 验证
-        if (enabled && !proxy) {
-            showToast('请输入代理地址', 'error');
-            return;
-        }
-
-        try {
-            const response = await fetch('/admin/settings/proxy', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ enabled, proxy })
-            });
-
-            const data = await response.json();
-
-            if (response.ok && data.success) {
-                showToast('代理配置已保存', 'success');
-            } else {
-                showToast(data.error || '保存失败', 'error');
-            }
-        } catch (error) {
-            showToast('网络错误', 'error');
-        }
-    });
-
     // FlareSolverr 配置表单
     document.getElementById('flaresolverrForm').addEventListener('submit', async (e) => {
         e.preventDefault();

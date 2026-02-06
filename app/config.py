@@ -31,10 +31,6 @@ class Settings(BaseSettings):
     # 日志配置
     log_level: str = "INFO"
 
-    # 代理配置
-    proxy: str = ""
-    proxy_enabled: bool = False
-
     # JWT 配置
     jwt_verify_signature: bool = False
 

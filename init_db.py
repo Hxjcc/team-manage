@@ -40,16 +40,6 @@ async def create_default_settings():
                 description="管理员密码哈希"
             ),
             Setting(
-                key="proxy",
-                value=settings.proxy,
-                description="代理地址 (支持 http:// 和 socks5://)"
-            ),
-            Setting(
-                key="proxy_enabled",
-                value=str(settings.proxy_enabled).lower(),
-                description="是否启用代理"
-            ),
-            Setting(
                 key="log_level",
                 value=settings.log_level,
                 description="日志级别"

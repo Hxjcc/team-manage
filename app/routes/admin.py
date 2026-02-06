@@ -1237,7 +1237,6 @@ async def settings_page(
         logger.info("管理员访问系统设置页面")
 
         # 获取当前配置
-        proxy_config = await settings_service.get_proxy_config(db)
         flaresolverr_config = await settings_service.get_flaresolverr_config(db)
         log_level = await settings_service.get_log_level(db)
 
@@ -1247,8 +1246,6 @@ async def settings_page(
                 "request": request,
                 "user": current_user,
                 "active_page": "settings",
-                "proxy_enabled": proxy_config["enabled"],
-                "proxy": proxy_config["proxy"],
                 "flaresolverr_enabled": flaresolverr_config["enabled"],
                 "flaresolverr_url": flaresolverr_config["url"],
                 "log_level": log_level
@@ -1263,12 +1260,6 @@ async def settings_page(
         )
 
 
-class ProxyConfigRequest(BaseModel):
-    """代理配置请求"""
-    enabled: bool = Field(..., description="是否启用代理")
-    proxy: str = Field("", description="代理地址")
-
-
 class LogLevelRequest(BaseModel):
     """日志级别请求"""
     level: str = Field(..., description="日志级别")
@@ -1278,67 +1269,6 @@ class FlareSolverrConfigRequest(BaseModel):
     """FlareSolverr 配置请求"""
     enabled: bool = Field(..., description="是否启用 FlareSolverr")
     url: str = Field("", description="FlareSolverr 服务地址")
-
-
-@router.post("/settings/proxy")
-async def update_proxy_config(
-    proxy_data: ProxyConfigRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(require_admin)
-):
-    """
-    更新代理配置
-
-    Args:
-        proxy_data: 代理配置数据
-        db: 数据库会话
-        current_user: 当前用户（需要登录）
-
-    Returns:
-        更新结果
-    """
-    try:
-        from app.services.settings import settings_service
-
-        logger.info(f"管理员更新代理配置: enabled={proxy_data.enabled}, proxy={proxy_data.proxy}")
-
-        # 验证代理地址格式
-        if proxy_data.enabled and proxy_data.proxy:
-            proxy = proxy_data.proxy.strip()
-            if not (proxy.startswith("http://") or proxy.startswith("https://") or proxy.startswith("socks5://") or proxy.startswith("socks5h://")):
-                return JSONResponse(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    content={
-                        "success": False,
-                        "error": "代理地址格式错误,应为 http://host:port, socks5://host:port 或 socks5h://host:port"
-                    }
-                )
-
-        # 更新配置
-        success = await settings_service.update_proxy_config(
-            db,
-            proxy_data.enabled,
-            proxy_data.proxy.strip() if proxy_data.proxy else ""
-        )
-
-        if success:
-            # 清理 ChatGPT 服务的会话,确保下次请求使用新代理
-            from app.services.chatgpt import chatgpt_service
-            await chatgpt_service.clear_session()
-            
-            return JSONResponse(content={"success": True, "message": "代理配置已保存"})
-        else:
-            return JSONResponse(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={"success": False, "error": "保存失败"}
-            )
-
-    except Exception as e:
-        logger.error(f"更新代理配置失败: {e}")
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"success": False, "error": f"更新失败: {str(e)}"}
-        )
 
 
 @router.post("/settings/log-level")

@@ -142,45 +142,6 @@ class SettingsService:
         self._cache.clear()
         logger.info("配置缓存已清空")
 
-    async def get_proxy_config(self, session: AsyncSession) -> Dict[str, str]:
-        """
-        获取代理配置
-
-        Returns:
-            代理配置字典
-        """
-        proxy_enabled = await self.get_setting(session, "proxy_enabled", "false")
-        proxy = await self.get_setting(session, "proxy", "")
-
-        return {
-            "enabled": proxy_enabled.lower() == "true",
-            "proxy": proxy
-        }
-
-    async def update_proxy_config(
-        self,
-        session: AsyncSession,
-        enabled: bool,
-        proxy: str = ""
-    ) -> bool:
-        """
-        更新代理配置
-
-        Args:
-            session: 数据库会话
-            enabled: 是否启用代理
-            proxy: 代理地址 (格式: http://host:port 或 socks5://host:port)
-
-        Returns:
-            是否更新成功
-        """
-        settings = {
-            "proxy_enabled": str(enabled).lower(),
-            "proxy": proxy
-        }
-
-        return await self.update_settings(session, settings)
-
     async def get_flaresolverr_config(self, session: AsyncSession) -> Dict[str, str]:
         """
         获取 FlareSolverr 配置
