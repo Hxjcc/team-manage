@@ -1240,7 +1240,7 @@ async def settings_page(
         flaresolverr_config = await settings_service.get_flaresolverr_config(db)
         log_level = await settings_service.get_log_level(db)
 
-        response = templates.TemplateResponse(
+        return templates.TemplateResponse(
             "admin/settings/index.html",
             {
                 "request": request,
@@ -1251,8 +1251,6 @@ async def settings_page(
                 "log_level": log_level
             }
         )
-        response.headers["Cache-Control"] = "no-store"
-        return response
 
     except Exception as e:
         logger.error(f"获取系统设置失败: {e}")
