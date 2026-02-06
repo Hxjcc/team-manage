@@ -13,7 +13,7 @@
         <h3>FlareSolverr (Cloudflare 验证)</h3>
     </div>
 
-    <form id="flaresolverrForm" class="settings-form">
+    <form id="flaresolverrForm" class="settings-form" data-turbo="false">
         <div class="form-group">
             <label class="checkbox-label">
                 <input type="checkbox" id="flaresolverrEnabled" name="enabled" {% if flaresolverr_enabled %}checked{% endif %}>
@@ -40,7 +40,7 @@
         <h3>修改密码</h3>
     </div>
 
-    <form id="passwordForm" class="settings-form">
+    <form id="passwordForm" class="settings-form" data-turbo="false">
         <div class="form-group">
             <label for="oldPassword">旧密码</label>
             <input type="password" id="oldPassword" name="old_password" required class="form-control"
@@ -70,7 +70,7 @@
         <h3>日志级别</h3>
     </div>
 
-    <form id="logLevelForm" class="settings-form">
+    <form id="logLevelForm" class="settings-form" data-turbo="false">
         <div class="form-group">
             <label for="logLevel">日志级别</label>
             <select id="logLevel" name="level" class="form-control">
