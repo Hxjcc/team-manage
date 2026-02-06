@@ -2,6 +2,7 @@
 Token 正则匹配工具
 用于从文本中提取 AT Token、邮箱、Account ID 等信息
 """
+import json
 import re
 from typing import List, Optional, Dict
 import logging
@@ -23,7 +24,8 @@ class TokenParser:
     ACCOUNT_ID_PATTERN = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 
     # Refresh Token 正则
-    REFRESH_TOKEN_PATTERN = r'rt-[A-Za-z0-9_-]+'
+    # 兼容 rt- / rt_，并允许包含 "."（新版 RT 中常见）
+    REFRESH_TOKEN_PATTERN = r'rt[-_][A-Za-z0-9._-]+'
     
     # Session Token 正则 (通常比较长，包含两个点)
     SESSION_TOKEN_PATTERN = r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)?'
@@ -90,10 +92,111 @@ class TokenParser:
         Returns:
             解析结果列表,每个元素包含 token, email, account_id
         """
-        results = []
+        results: List[Dict[str, Optional[str]]] = []
+
+        text_stripped = (text or "").strip()
+        if not text_stripped:
+            return results
+
+        def extract_from_json(obj) -> Optional[Dict[str, Optional[str]]]:
+            if not isinstance(obj, dict):
+                return None
+
+            token = obj.get("access_token") or obj.get("accessToken") or obj.get("token")
+            refresh_token = obj.get("refresh_token") or obj.get("refreshToken")
+            session_token = obj.get("session_token") or obj.get("sessionToken")
+            client_id = obj.get("client_id") or obj.get("clientId")
+            email = obj.get("email")
+            account_id = obj.get("account_id") or obj.get("accountId")
+
+            if not any([token, refresh_token, session_token]):
+                return None
+
+            return {
+                "token": token,
+                "email": email,
+                "account_id": account_id,
+                "refresh_token": refresh_token,
+                "session_token": session_token,
+                "client_id": client_id,
+            }
+
+        # 0) JSON 解析（支持单个对象 / 数组 / 多个对象拼接）
+        if text_stripped.startswith("{") or text_stripped.startswith("["):
+            try:
+                parsed = json.loads(text_stripped)
+                if isinstance(parsed, dict):
+                    item = extract_from_json(parsed)
+                    if item:
+                        results.append(item)
+                        logger.info("从 JSON 文本中解析到 1 条 Team 信息")
+                        return results
+                elif isinstance(parsed, list):
+                    for obj in parsed:
+                        item = extract_from_json(obj)
+                        if item:
+                            results.append(item)
+                    if results:
+                        logger.info(f"从 JSON 数组中解析到 {len(results)} 条 Team 信息")
+                        return results
+            except Exception:
+                # 继续尝试解析“多对象拼接”的 JSON
+                pass
+
+            # 多个 JSON 对象可能直接拼在一起（或以换行分隔），尝试按括号配对提取
+            try:
+                objs = []
+                buf = []
+                depth = 0
+                in_string = False
+                escape = False
+                for ch in text_stripped:
+                    if depth == 0 and ch != "{":
+                        continue
+
+                    buf.append(ch)
+
+                    if in_string:
+                        if escape:
+                            escape = False
+                        elif ch == "\\":
+                            escape = True
+                        elif ch == "\"":
+                            in_string = False
+                        continue
+
+                    if ch == "\"":
+                        in_string = True
+                        continue
+
+                    if ch == "{":
+                        depth += 1
+                    elif ch == "}":
+                        depth -= 1
+                        if depth == 0:
+                            candidate = "".join(buf).strip()
+                            buf = []
+                            try:
+                                obj = json.loads(candidate)
+                                if isinstance(obj, dict):
+                                    objs.append(obj)
+                            except Exception:
+                                # ignore malformed chunks
+                                pass
+
+                for obj in objs:
+                    item = extract_from_json(obj)
+                    if item:
+                        results.append(item)
+                if results:
+                    logger.info(f"从拼接 JSON 中解析到 {len(results)} 条 Team 信息")
+                    return results
+            except Exception:
+                # ignore and fallback to legacy parsing
+                pass
 
         # 按行分割文本
-        lines = text.strip().split('\n')
+        lines = text_stripped.split('\n')
 
         for line in lines:
             line = line.strip()

@@ -439,9 +439,121 @@ function toggleWarrantyDays(checkbox, targetId) {
 
 // === Team 导入逻辑 ===
 
+function _extractTeamImportFromJsonObject(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+
+    const accessToken = (obj.access_token || obj.accessToken || obj.token || '').toString().trim();
+    const refreshToken = (obj.refresh_token || obj.refreshToken || '').toString().trim();
+    const sessionToken = (obj.session_token || obj.sessionToken || '').toString().trim();
+    const clientId = (obj.client_id || obj.clientId || '').toString().trim();
+    const email = (obj.email || '').toString().trim();
+    const accountId = (obj.account_id || obj.accountId || '').toString().trim();
+
+    if (!accessToken && !refreshToken && !sessionToken) return null;
+
+    return {
+        accessToken: accessToken || '',
+        refreshToken: refreshToken || '',
+        sessionToken: sessionToken || '',
+        clientId: clientId || '',
+        email: email || '',
+        accountId: accountId || ''
+    };
+}
+
+function _tryParseTeamImportJson(text) {
+    const trimmed = (text || '').trim();
+    if (!trimmed) return null;
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+
+    try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+            const items = parsed.map(_extractTeamImportFromJsonObject).filter(Boolean);
+            return items.length ? items : null;
+        }
+        const item = _extractTeamImportFromJsonObject(parsed);
+        return item ? [item] : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+async function handleSingleImportJsonFile(event) {
+    const input = event.target;
+    const file = input && input.files && input.files[0];
+    if (!file) return;
+
+    try {
+        const text = await file.text();
+        const items = _tryParseTeamImportJson(text);
+        if (!items || items.length === 0) {
+            showToast('JSON 文件解析失败：未找到 access_token/refresh_token/client_id', 'error');
+            return;
+        }
+
+        const item = items[0];
+        const form = document.getElementById('singleImportForm');
+        if (!form) return;
+
+        if (item.accessToken) form.accessToken.value = item.accessToken;
+        if (item.refreshToken && form.refreshToken) form.refreshToken.value = item.refreshToken;
+        if (item.sessionToken && form.sessionToken) form.sessionToken.value = item.sessionToken;
+        if (item.clientId && form.clientId) form.clientId.value = item.clientId;
+        if (item.email && form.email) form.email.value = item.email;
+        if (item.accountId && form.accountId) form.accountId.value = item.accountId;
+
+        showToast('已从 JSON 文件读取并填充 Token', 'success');
+    } catch (e) {
+        console.error(e);
+        showToast('读取/解析 JSON 文件失败', 'error');
+    } finally {
+        // 允许重复选择同一文件触发 change
+        try { input.value = ''; } catch (_) { }
+    }
+}
+
+async function handleBatchImportJsonFile(event) {
+    const input = event.target;
+    const file = input && input.files && input.files[0];
+    if (!file) return;
+
+    try {
+        const text = await file.text();
+        const form = document.getElementById('batchImportForm');
+        if (!form || !form.batchContent) return;
+        form.batchContent.value = text;
+        showToast('已加载文件内容到批量导入', 'success');
+    } catch (e) {
+        console.error(e);
+        showToast('读取文件失败', 'error');
+    } finally {
+        try { input.value = ''; } catch (_) { }
+    }
+}
+
 async function handleSingleImport(event) {
     event.preventDefault();
     const form = event.target;
+    const rawAccessToken = form.accessToken.value.trim();
+    const refreshTokenInput = form.refreshToken ? form.refreshToken.value.trim() : '';
+    const sessionTokenInput = form.sessionToken ? form.sessionToken.value.trim() : '';
+    const clientIdInput = form.clientId ? form.clientId.value.trim() : '';
+    const emailInput = form.email.value.trim();
+    const accountIdInput = form.accountId.value.trim();
+
+    // 允许直接把 JSON 粘贴到 AT 输入框（会自动提取 access_token/refresh_token/client_id）
+    let parsed = _tryParseTeamImportJson(rawAccessToken);
+    if (parsed && parsed.length) {
+        const item = parsed[0];
+        if (item.accessToken) form.accessToken.value = item.accessToken;
+        if (item.refreshToken && form.refreshToken) form.refreshToken.value = item.refreshToken;
+        if (item.sessionToken && form.sessionToken) form.sessionToken.value = item.sessionToken;
+        if (item.clientId && form.clientId) form.clientId.value = item.clientId;
+        if (!emailInput && item.email && form.email) form.email.value = item.email;
+        if (!accountIdInput && item.accountId && form.accountId) form.accountId.value = item.accountId;
+    }
+
     const accessToken = form.accessToken.value.trim();
     const refreshToken = form.refreshToken ? form.refreshToken.value.trim() : null;
     const sessionToken = form.sessionToken ? form.sessionToken.value.trim() : null;
