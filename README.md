@@ -6,7 +6,7 @@
 
 ### 一键部署
 ```bash
-git clone https://github.com/tibbar213/team-manage.git
+git clone https://github.com/Hxjcc/team-manage.git
 cd team-manage
 cp .env.example .env
 docker compose up -d
