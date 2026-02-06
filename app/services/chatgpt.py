@@ -26,6 +26,56 @@ class ChatGPTService:
         self.session: Optional[AsyncSession] = None
         self.proxy: Optional[str] = None
 
+    @staticmethod
+    def _looks_like_html(text: Optional[str]) -> bool:
+        if not text:
+            return False
+        stripped = text.lstrip().lower()
+        return stripped.startswith("<!doctype html") or stripped.startswith("<html") or "<html" in stripped[:200]
+
+    @staticmethod
+    def _is_cloudflare_challenge(text: Optional[str]) -> bool:
+        if not text:
+            return False
+        lowered = text.lower()
+        return (
+            "cdn-cgi/challenge-platform" in lowered
+            or "_cf_chl_opt" in lowered
+            or "cf-chl" in lowered
+            or "enable javascript and cookies to continue" in lowered
+        )
+
+    @classmethod
+    def _simplify_error_text(cls, text: Optional[str]) -> Dict[str, Optional[str]]:
+        """
+        将 HTML/超长错误收敛成可读提示，避免把整页 HTML 直接返回到前端。
+
+        Returns:
+            dict: { message: str, code: Optional[str] }
+        """
+        if not text:
+            return {"message": "请求失败", "code": None}
+
+        # Cloudflare 验证页（常见于 chatgpt.com 后端接口）
+        if cls._looks_like_html(text) and cls._is_cloudflare_challenge(text):
+            return {
+                "message": "请求被 Cloudflare 拦截（需要浏览器验证）。请更换网络/IP 或在系统设置中配置代理后重试。",
+                "code": "cloudflare_challenge",
+            }
+
+        # 其它 HTML 页面（如被重定向到登录页/错误页）
+        if cls._looks_like_html(text):
+            return {
+                "message": "服务返回了 HTML 页面（可能被拦截或重定向），请稍后重试。",
+                "code": "html_response",
+            }
+
+        # 普通文本：截断避免前端 toast 过长
+        trimmed = str(text).strip()
+        if len(trimmed) > 2000:
+            trimmed = trimmed[:2000] + "...(已截断)"
+        return {"message": trimmed, "code": None}
+
     async def _get_proxy_config(self, db_session: DBAsyncSession) -> Optional[str]:
         """
         获取代理配置
@@ -109,16 +159,48 @@ class ChatGPTService:
 
                 # 2xx 成功
                 if 200 <= status_code < 300:
+                    # 若返回 HTML（Cloudflare/重定向页面），即便是 2xx 也应视为失败
+                    content_type = ""
                     try:
-                        data = response.json()
+                        content_type = (response.headers.get("content-type") or "").lower()
                     except Exception:
-                        data = {}
+                        content_type = ""
 
+                    is_json = "application/json" in content_type
+                    text_body = None
+
+                    if is_json:
+                        try:
+                            data = response.json()
+                            return {
+                                "success": True,
+                                "status_code": status_code,
+                                "data": data,
+                                "error": None
+                            }
+                        except Exception:
+                            text_body = response.text
+                    else:
+                        # 非 JSON 情况下尝试解析；若失败或内容像 HTML，则报错
+                        try:
+                            data = response.json()
+                            return {
+                                "success": True,
+                                "status_code": status_code,
+                                "data": data,
+                                "error": None
+                            }
+                        except Exception:
+                            text_body = response.text
+
+                    simplified = self._simplify_error_text(text_body)
+                    logger.warning(f"响应内容非 JSON 或解析失败: {simplified['message']}")
                     return {
-                        "success": True,
+                        "success": False,
                         "status_code": status_code,
-                        "data": data,
-                        "error": None
+                        "data": None,
+                        "error": simplified["message"],
+                        "error_code": simplified.get("code") or "invalid_response"
                     }
 
                 # 4xx 客户端错误 (不重试)
@@ -139,6 +221,10 @@ class ChatGPTService:
                     except Exception:
                         error_msg = response.text
 
+                    simplified = self._simplify_error_text(error_msg)
+                    error_msg = simplified["message"]
+                    error_code = error_code or simplified.get("code")
+
                     logger.warning(f"客户端错误 {status_code}: {error_msg} (code: {error_code})")
 
                     return {
@@ -151,6 +237,23 @@ class ChatGPTService:
 
                 # 5xx 服务器错误 (需要重试)
                 if status_code >= 500:
+                    # Cloudflare 验证页有时会以 5xx 返回，直接给出更友好的错误提示
+                    try:
+                        body_text = response.text
+                    except Exception:
+                        body_text = ""
+
+                    if self._looks_like_html(body_text) and self._is_cloudflare_challenge(body_text):
+                        simplified = self._simplify_error_text(body_text)
+                        logger.warning(f"服务器错误 {status_code}: {simplified['message']}")
+                        return {
+                            "success": False,
+                            "status_code": status_code,
+                            "data": None,
+                            "error": simplified["message"],
+                            "error_code": simplified.get("code") or "cloudflare_challenge"
+                        }
+
                     logger.warning(f"服务器错误 {status_code},准备重试")
 
                     # 如果不是最后一次尝试,等待后重试
