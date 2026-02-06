@@ -35,24 +35,85 @@ function normalizeInputCode(raw) {
 }
 
 // Toast提示函数
+let __toastHideTimer = null;
+
+function hideToast() {
+    const toast = document.getElementById('toast');
+    if (!toast) return;
+
+    if (__toastHideTimer) {
+        clearTimeout(__toastHideTimer);
+        __toastHideTimer = null;
+    }
+
+    toast.classList.remove('show');
+    toast.classList.remove('expanded');
+}
+
 function showToast(message, type = 'info') {
     const toast = document.getElementById('toast');
     if (!toast) return;
 
+    if (__toastHideTimer) {
+        clearTimeout(__toastHideTimer);
+        __toastHideTimer = null;
+    }
+
     let icon = 'info';
     if (type === 'success') icon = 'check-circle';
     if (type === 'error') icon = 'alert-circle';
+    if (type === 'warning') icon = 'alert-triangle';
 
-    toast.innerHTML = `<i data-lucide="${icon}"></i><span>${message}</span>`;
+    const messageText = message === null || message === undefined ? '' : String(message);
+    const isLong = messageText.length > 160 || messageText.includes('\n');
+
+    toast.innerHTML = '';
     toast.className = `toast ${type} show`;
+    toast.classList.toggle('toast-long', isLong);
+    toast.classList.remove('expanded');
+
+    const iconEl = document.createElement('i');
+    iconEl.setAttribute('data-lucide', icon);
+
+    const msgEl = document.createElement('span');
+    msgEl.className = 'toast-message';
+    msgEl.textContent = messageText;
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'toast-close';
+    closeBtn.setAttribute('aria-label', '关闭提示');
+    closeBtn.innerHTML = '<i data-lucide="x"></i>';
+    closeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        hideToast();
+    });
+
+    toast.appendChild(iconEl);
+    toast.appendChild(msgEl);
+    toast.appendChild(closeBtn);
+
+    toast.onclick = () => {
+        if (!toast.classList.contains('toast-long')) return;
+
+        toast.classList.toggle('expanded');
+        if (toast.classList.contains('expanded')) {
+            if (__toastHideTimer) {
+                clearTimeout(__toastHideTimer);
+                __toastHideTimer = null;
+            }
+        } else {
+            __toastHideTimer = setTimeout(hideToast, 2500);
+        }
+    };
 
     if (window.lucide) {
         lucide.createIcons();
     }
 
-    setTimeout(() => {
-        toast.classList.remove('show');
-    }, 3000);
+    const duration = type === 'error' ? 10000 : type === 'warning' ? 8000 : 3000;
+    __toastHideTimer = setTimeout(hideToast, duration);
 }
 
 // 切换步骤

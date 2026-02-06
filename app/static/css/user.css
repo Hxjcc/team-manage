@@ -190,6 +190,7 @@ svg.lucide {
     display: none;
     align-items: center;
     gap: 0.75rem;
+    max-width: min(560px, calc(100vw - 2rem));
     z-index: 100;
 }
 
@@ -202,6 +203,48 @@ svg.lucide {
     height: 18px;
     flex-shrink: 0;
     display: block;
+}
+
+.toast-message {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: pre-wrap;
+    line-height: 1.35;
+}
+
+.toast.toast-long {
+    cursor: pointer;
+}
+
+.toast.toast-long:not(.expanded) .toast-message {
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.toast.expanded .toast-message {
+    max-height: min(60vh, 340px);
+    overflow: auto;
+    padding-right: 0.25rem;
+}
+
+.toast-close {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 0.25rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.toast-close:hover {
+    color: var(--text-main);
 }
 
 .toast.success {
