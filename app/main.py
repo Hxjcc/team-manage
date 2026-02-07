@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 import logging
 import asyncio
 from pathlib import Path
@@ -121,6 +122,18 @@ app.add_middleware(
     same_site="lax",
     https_only=False  # 开发环境设为 False，生产环境应设为 True
 )
+
+# 禁用管理页面的浏览器缓存，防止 Turbo 页面导航后 JS 不执行
+class NoCacheAdminMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/admin"):
+            content_type = response.headers.get("content-type", "")
+            if "text/html" in content_type:
+                response.headers["Cache-Control"] = "no-store"
+        return response
+
+app.add_middleware(NoCacheAdminMiddleware)
 
 # 配置静态文件
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
