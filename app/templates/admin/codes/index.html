@@ -131,10 +131,10 @@
                             <div>
                                 <span class="text-muted">#{{ code.display_team_id }}</span>
                                 <span>{{ code.display_team_name or '' }}</span>
+                                {% if code.display_team_role and code.display_team_role != 'account-owner' %}
+                                <span class="role-hint" title="账号角色: {{ code.display_team_role }}">已降级</span>
+                                {% endif %}
                             </div>
-                            {% if code.display_team_role and code.display_team_role != 'account-owner' %}
-                            <span class="role-hint" title="账号角色: {{ code.display_team_role }}">已降级</span>
-                            {% endif %}
                             {% if code.display_remaining_days is not none %}
                             <span class="text-muted small">剩余 {{ code.display_remaining_days }} 天</span>
                             {% endif %}
