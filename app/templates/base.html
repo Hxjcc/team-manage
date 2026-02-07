@@ -9,13 +9,17 @@
     <script src="{{ url_for('static', path='/js/vendor/turbo.min.js') }}?v={{ static_version }}"></script>
     <script>
         if (window.Turbo && Turbo.setProgressBarDelay) Turbo.setProgressBarDelay(0);
+        var _turboFirstLoad = true;
         document.addEventListener('turbo:load', function () {
             if (window.lucide) lucide.createIcons();
-        });
-        // 防止 Turbo 从快照恢复时内联脚本不执行：
-        // 缓存前清空快照，迫使后退/前进时重新请求页面
-        document.addEventListener('turbo:before-cache', function () {
-            document.body.innerHTML = '';
+            // 首次加载由浏览器正常执行脚本，之后每次 Turbo 导航（含后退）
+            // 强制重新执行内联脚本，解决 Turbo 缓存恢复时脚本不执行的问题
+            if (_turboFirstLoad) { _turboFirstLoad = false; return; }
+            document.querySelectorAll('body script:not([src]):not([data-turbo-eval="false"])').forEach(function(s) {
+                var n = document.createElement('script');
+                n.textContent = s.textContent;
+                s.replaceWith(n);
+            });
         });
     </script>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/favicon.svg') }}?v={{ static_version }}">
