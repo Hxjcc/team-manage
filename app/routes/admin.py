@@ -635,6 +635,7 @@ async def codes_list_page(
                     remaining_days = calculate_remaining_days(team.expires_at)
                     price_cents = calculate_price_cents(remaining_days)
                     code["display_team_name"] = team.team_name or f"Team {team.id}"
+                    code["display_team_role"] = team.account_role
                     code["display_remaining_days"] = remaining_days
                     code["display_price_yuan"] = format_price_yuan(price_cents)
 

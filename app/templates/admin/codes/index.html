@@ -47,6 +47,8 @@
             <button onclick="filterByStatus('unused')" class="filter-tab" id="filter-unused">未使用</button>
             <button onclick="filterByStatus('used')" class="filter-tab" id="filter-used">已使用</button>
             <button onclick="filterByStatus('expired')" class="filter-tab" id="filter-expired">已过期</button>
+            <button onclick="filterByStatus('demoted')" class="filter-tab" id="filter-demoted">已降级</button>
+            <button onclick="filterByStatus('not_demoted')" class="filter-tab" id="filter-not_demoted">未降级</button>
         </div>
 
         <form action="/admin/codes" method="get" class="search-form">
@@ -99,7 +101,7 @@
             </thead>
             <tbody id="codesTableBody">
                 {% for code in codes %}
-                <tr data-status="{{ code.status }}">
+                <tr data-status="{{ code.status }}" data-demoted="{{ 'true' if code.display_team_role and code.display_team_role != 'account-owner' else 'false' }}">
                     <td>
                         <input type="checkbox" class="code-checkbox" value="{{ code.code }}"
                             onchange="updateSelectionCount()" style="width: auto; margin: 0;">
@@ -129,6 +131,9 @@
                             <div>
                                 <span class="text-muted">#{{ code.display_team_id }}</span>
                                 <span>{{ code.display_team_name or '' }}</span>
+                                {% if code.display_team_role and code.display_team_role != 'account-owner' %}
+                                <span class="role-hint" title="账号角色: {{ code.display_team_role }}">已降级</span>
+                                {% endif %}
                                 {% if code.display_team_source %}
                                 <span class="text-muted small">({{ code.display_team_source }})</span>
                                 {% endif %}
@@ -370,7 +375,9 @@
         rows.forEach(row => {
             const rowStatus = row.getAttribute('data-status');
             const isUsedFilter = status === 'used' && (rowStatus === 'used' || rowStatus === 'warranty_active');
-            if (status === 'all' || rowStatus === status || isUsedFilter) {
+            const isDemotedFilter = status === 'demoted' && row.getAttribute('data-demoted') === 'true';
+            const isNotDemotedFilter = status === 'not_demoted' && row.getAttribute('data-demoted') === 'false';
+            if (status === 'all' || rowStatus === status || isUsedFilter || isDemotedFilter || isNotDemotedFilter) {
                 row.style.display = '';
             } else {
                 row.style.display = 'none';
