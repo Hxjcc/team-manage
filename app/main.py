@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 import logging
+import asyncio
 from pathlib import Path
 from datetime import datetime
 
@@ -24,6 +25,26 @@ APP_DIR = BASE_DIR / "app"
 
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+async def _periodic_team_sync():
+    """后台任务: 每24小时自动同步所有 Team 信息"""
+    from app.services.team import TeamService
+    service = TeamService()
+    while True:
+        try:
+            await asyncio.sleep(24 * 60 * 60)  # 24 hours
+            logger.info("Starting scheduled team sync...")
+            async with AsyncSessionLocal() as session:
+                result = await service.sync_all_teams(session)
+                logger.info(
+                    f"Scheduled sync done: success={result.get('success_count')}, "
+                    f"failed={result.get('failed_count')}"
+                )
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Scheduled team sync error: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -35,23 +56,33 @@ async def lifespan(app: FastAPI):
         # 0. 确保数据库目录存在
         db_file = settings.database_url.split("///")[-1]
         Path(db_file).parent.mkdir(parents=True, exist_ok=True)
-        
+
         # 1. 创建数据库表
         await init_db()
-        
+
         # 2. 运行自动数据库迁移
         from app.db_migrations import run_auto_migration
         run_auto_migration()
-        
+
         # 3. 初始化管理员密码（如果不存在）
         async with AsyncSessionLocal() as session:
             await auth_service.initialize_admin_password(session)
         logger.info("数据库初始化完成")
     except Exception as e:
         logger.error(f"数据库初始化失败: {e}")
-    
+
+    # 4. 启动定时 Team 同步后台任务
+    sync_task = asyncio.create_task(_periodic_team_sync())
+
     yield
-    
+
+    # 取消后台同步任务
+    sync_task.cancel()
+    try:
+        await sync_task
+    except asyncio.CancelledError:
+        pass
+
     # 关闭连接
     await close_db()
     logger.info("系统正在关闭，已释放数据库连接")

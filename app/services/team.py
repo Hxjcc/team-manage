@@ -2,6 +2,7 @@
 Team 管理服务
 用于管理 Team 账号的导入、同步、成员管理等功能
 """
+import asyncio
 import logging
 from typing import Optional, Dict, Any, List
 from datetime import datetime
@@ -937,6 +938,9 @@ class TeamService:
                     "error": result["error"]
                 })
 
+                # 避免触发 chatgpt.com 速率限制
+                await asyncio.sleep(2)
+
             logger.info(f"批量同步完成: 总数 {len(teams)}, 成功 {success_count}, 失败 {failed_count}")
 
             return {
@@ -1821,15 +1825,23 @@ class TeamService:
                     "error": f"Team ID {team_id} 不存在"
                 }
 
-            # 2. 删除 Team (级联删除 team_accounts 和 redemption_records)
+            # 2. 删除绑定该 Team 的未使用兑换码
+            del_codes_stmt = delete(RedemptionCode).where(
+                RedemptionCode.bound_team_id == team_id,
+                RedemptionCode.status == "unused"
+            )
+            del_codes_result = await db_session.execute(del_codes_stmt)
+            deleted_codes_count = del_codes_result.rowcount
+
+            # 3. 删除 Team (级联删除 team_accounts 和 redemption_records)
             await db_session.delete(team)
             await db_session.commit()
 
-            logger.info(f"删除 Team {team_id} 成功")
+            logger.info(f"删除 Team {team_id} 成功, 同时删除 {deleted_codes_count} 个未使用兑换码")
 
             return {
                 "success": True,
-                "message": "Team 已删除",
+                "message": f"Team 已删除, 同时删除 {deleted_codes_count} 个未使用兑换码",
                 "error": None
             }
 
