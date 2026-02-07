@@ -708,8 +708,16 @@ class ChatGPTService:
             account = account_info.get("account", {})
             entitlement = account_info.get("entitlement", {})
 
+            # account_user_role 可能在 account_info 顶层或 account 子对象中
+            account_user_role = (
+                account_info.get("account_user_role")
+                or account.get("account_user_role")
+                or ""
+            )
+
             # 只保留 Team 类型的账户
             if account.get("plan_type") == "team":
+                logger.debug(f"Account {account_id} keys: account_info={list(account_info.keys())}, account={list(account.keys())}")
                 team_accounts.append({
                     "account_id": account_id,
                     "name": account.get("name", ""),
@@ -717,7 +725,7 @@ class ChatGPTService:
                     "subscription_plan": entitlement.get("subscription_plan", ""),
                     "expires_at": entitlement.get("expires_at", ""),
                     "has_active_subscription": entitlement.get("has_active_subscription", False),
-                    "account_user_role": account.get("account_user_role", "")
+                    "account_user_role": account_user_role
                 })
 
         logger.info(f"获取账户信息成功: 共 {len(team_accounts)} 个 Team 账户")
