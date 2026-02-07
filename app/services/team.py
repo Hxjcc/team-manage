@@ -393,6 +393,7 @@ class TeamService:
                     team_name=selected_account["name"],
                     plan_type=selected_account["plan_type"],
                     subscription_plan=selected_account["subscription_plan"],
+                    account_role=selected_account.get("account_user_role"),
                     expires_at=expires_at,
                     current_members=current_members,
                     max_members=max_members,
@@ -590,7 +591,8 @@ class TeamService:
                     "session_token": encryption_service.decrypt_token(team.session_token_encrypted) if team.session_token_encrypted else "",
                     "client_id": team.client_id or "",
                     "team_name": team.team_name,
-                    "status": team.status
+                    "status": team.status,
+                    "account_role": team.account_role
                 }
             }
         except Exception as e:
@@ -863,6 +865,7 @@ class TeamService:
             team.team_name = current_account["name"]
             team.plan_type = current_account["plan_type"]
             team.subscription_plan = current_account["subscription_plan"]
+            team.account_role = current_account.get("account_user_role")
             team.expires_at = expires_at
             team.current_members = current_members
             team.status = status

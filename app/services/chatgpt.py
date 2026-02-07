@@ -716,7 +716,8 @@ class ChatGPTService:
                     "plan_type": account.get("plan_type", ""),
                     "subscription_plan": entitlement.get("subscription_plan", ""),
                     "expires_at": entitlement.get("expires_at", ""),
-                    "has_active_subscription": entitlement.get("has_active_subscription", False)
+                    "has_active_subscription": entitlement.get("has_active_subscription", False),
+                    "account_user_role": account.get("account_user_role", "")
                 })
 
         logger.info(f"获取账户信息成功: 共 {len(team_accounts)} 个 Team 账户")
