@@ -10,8 +10,12 @@
     <script>
         if (window.Turbo && Turbo.setProgressBarDelay) Turbo.setProgressBarDelay(0);
         document.addEventListener('turbo:load', function () {
-            Turbo.cache.clear();
             if (window.lucide) lucide.createIcons();
+        });
+        // 防止 Turbo 从快照恢复时内联脚本不执行：
+        // 缓存前清空快照，迫使后退/前进时重新请求页面
+        document.addEventListener('turbo:before-cache', function () {
+            document.body.innerHTML = '';
         });
     </script>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/favicon.svg') }}?v={{ static_version }}">
