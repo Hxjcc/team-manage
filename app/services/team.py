@@ -1729,6 +1729,7 @@ class TeamService:
                     "current_members": team.current_members,
                     "max_members": team.max_members,
                     "status": team.status,
+                    "account_role": team.account_role,
                     "last_sync": team.last_sync.isoformat() if team.last_sync else None,
                     "created_at": team.created_at.isoformat() if team.created_at else None,
                     "remaining_days": remaining_days,
