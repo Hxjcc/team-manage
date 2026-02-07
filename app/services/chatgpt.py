@@ -717,7 +717,6 @@ class ChatGPTService:
 
             # 只保留 Team 类型的账户
             if account.get("plan_type") == "team":
-                logger.info(f"Account {account_id} role={account_user_role}, account_info_keys={list(account_info.keys())}, account_keys={list(account.keys())}")
                 team_accounts.append({
                     "account_id": account_id,
                     "name": account.get("name", ""),
