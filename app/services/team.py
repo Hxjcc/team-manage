@@ -78,6 +78,14 @@ class TeamService:
                 
             logger.warning(f"检测到账号{status_desc} (code={error_code}, msg={error_msg}), 更新 Team {team.id} ({team.email}) 状态为 banned")
             team.status = "banned"
+            # 自动删除绑定到该 Team 的未使用兑换码
+            del_codes_stmt = delete(RedemptionCode).where(
+                RedemptionCode.bound_team_id == team.id,
+                RedemptionCode.status == "unused"
+            )
+            del_result = await db_session.execute(del_codes_stmt)
+            if del_result.rowcount > 0:
+                logger.info(f"Team {team.id} 被封禁，自动删除 {del_result.rowcount} 个未使用兑换码")
             await db_session.commit()
             return True
             
