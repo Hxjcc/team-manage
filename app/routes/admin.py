@@ -110,7 +110,9 @@ async def admin_dashboard(
         )).scalar() or 0
         total_codes = (await db.execute(select(func.count(RedemptionCode.id)))).scalar() or 0
         used_codes = (await db.execute(
-            select(func.count(RedemptionCode.id)).where(RedemptionCode.status == "used")
+            select(func.count(RedemptionCode.id)).where(
+                RedemptionCode.status.in_(["used", "warranty_active"])
+            )
         )).scalar() or 0
 
         stats = {
